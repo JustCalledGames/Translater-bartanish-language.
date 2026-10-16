@@ -1,1 +1,1484 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Переводчик Бартанского языка</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Unbounded:wght@500;600&display=swap">
+<style>
+/* Layout: one narrow column. Input frame on top, translation frame below, the key table folded at the bottom. */
+:root {
+  --bg: #E8ECF0;
+  --panel: #F8FAFB;
+  --panel-2: #EDF1F5;
+  --fg: #16212B;
+  --muted: #586878;
+  --line: #C3CCD6;
+  --accent: #2B55E0;
+  --on-accent: #FFFFFF;
+  --font-display: 'Unbounded', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F161D;
+    --panel: #16202A;
+    --panel-2: #1B2733;
+    --fg: #E4EAF0;
+    --muted: #93A3B3;
+    --line: #2E3C49;
+    --accent: #7F9CFF;
+    --on-accent: #0F161D;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F161D;
+  --panel: #16202A;
+  --panel-2: #1B2733;
+  --fg: #E4EAF0;
+  --muted: #93A3B3;
+  --line: #2E3C49;
+  --accent: #7F9CFF;
+  --on-accent: #0F161D;
+  color-scheme: dark;
+}
 
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  padding-block: 28px 44px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 42rem; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+.wrap > * { min-width: 0; }
+
+h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.3rem, 5vw, 1.7rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+  text-wrap: balance;
+}
+.progress { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 0.8125rem; flex-wrap: wrap; }
+.segs { display: flex; gap: 4px; }
+.seg { width: 28px; height: 6px; border-radius: 2px; background: var(--line); }
+.seg.on { background: var(--accent); }
+
+.field { display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; min-height: 32px; }
+.lab { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.status { font-size: 0.8125rem; color: var(--muted); }
+
+.frame { border: 1.5px solid var(--line); border-radius: 6px; background: var(--panel); }
+.frame:focus-within { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
+textarea {
+  display: block;
+  width: 100%;
+  min-height: 9.5rem;
+  padding: 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: 1.125rem/1.6 var(--font-mono);
+  resize: vertical;
+  outline: none;
+}
+.out {
+  min-height: 9.5rem;
+  padding: 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--fg);
+  font: 1.125rem/1.6 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.out:empty::before { content: attr(data-ph); color: var(--muted); }
+.modes { display: flex; gap: 0; border: 1.5px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.mode { flex: 1; font: 500 0.9375rem var(--font-body); padding: 10px 12px; border: 0; background: transparent; color: var(--fg); cursor: pointer; }
+.mode + .mode { border-left: 1.5px solid var(--line); }
+.mode[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.mode:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+[hidden] { display: none !important; }
+.hint { margin: 0; font-size: 0.8125rem; color: var(--muted); }
+
+.btn {
+  font: 500 0.8125rem var(--font-body);
+  padding: 7px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--fg);
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+details { border-top: 1px solid var(--line); padding-top: 14px; }
+summary { cursor: pointer; font-weight: 600; }
+summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.key { display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+.key h3 { margin: 0 0 8px; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 6px; }
+.grid.wide { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); }
+.pair {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  font-family: var(--font-mono);
+  min-width: 0;
+}
+.pair .f { color: var(--muted); }
+.pair .a { color: var(--muted); font-size: 0.75rem; }
+.pair .t { font-weight: 500; overflow-wrap: anywhere; text-align: right; }
+.seq { margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font: 1rem/1.7 var(--font-mono); overflow-wrap: anywhere; }
+.special { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 0.9375rem; }
+.special code { font-family: var(--font-mono); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Переводчик Бартанского языка</h1>
+  </header>
+
+  <div class="modes" role="group" aria-label="Направление перевода">
+    <button class="mode" type="button" id="m-to" aria-pressed="true">На бартанский</button>
+    <button class="mode" type="button" id="m-from" aria-pressed="false">С бартанского</button>
+  </div>
+
+  <section class="field">
+    <div class="row">
+      <label class="lab" for="src" id="src-label">Ваш текст</label>
+      <div class="tools"><button class="btn" type="button" id="clear">Очистить</button></div>
+    </div>
+    <div class="frame">
+      <textarea id="src" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="hint">Привет, мир! Это моя соль.
+Стон 12 мам, Анна</textarea>
+    </div>
+    <p class="hint" id="hint">Начальный текст служит примером. Сотрите его и пишите своё. Каждый абзац переводится отдельно.</p>
+  </section>
+
+  <section class="field">
+    <div class="row">
+      <span class="lab" id="dst-label">Перевод</span>
+      <div class="tools">
+        <span class="status" id="status" role="status" aria-live="polite"></span>
+        <button class="btn primary" type="button" id="copy">Копировать</button>
+      </div>
+    </div>
+    <div class="out" id="dst" role="region" aria-labelledby="dst-label" data-ph="Здесь появится перевод"></div>
+    <p class="hint" id="hint2" hidden>Знак вопроса значит, что однозначно угадать букву нельзя. Остальные символы убраны.</p>
+  </section>
+
+  <section class="field" id="en-box" hidden>
+    <div class="row">
+      <span class="lab" id="dst2-label">English</span>
+      <div class="tools"><button class="btn primary" type="button" id="copy2">Копировать</button></div>
+    </div>
+    <div class="out" id="dst2" role="region" aria-labelledby="dst2-label" data-ph="Translation appears here"></div>
+  </section>
+</div>
+
+<script>
+/*ENGINE*/
+const MAP = {
+  a: ['A', 'a'], b: ['B', 'b'], c: ['S', 's'], d: ['D', 'd'], e: ['E', 'e'],
+  f: ['G', 'g'], g: ['F', 'f'], h: ['X', 'x'], i: ['L', 'l'], j: ['j', 'J'],
+  k: ['K', 'k'], l: ['I', 'i'], n: ['Ĥ', 'H'], o: ['O', 'o'], p: ['R', 'r'],
+  q: ['W', 'w'], r: ['P', 'p'], s: ['Č', 'č'], u: ['Y', 'y'], v: ['V', ';'],
+  w: ['Q', 'q'], x: ['Ĥ', 'H'], y: ['U', 'u'], z: ['Ż', 'ż'],
+  'а': ['A', 'a'], 'б': ['B', 'b'], 'в': ['V', ';'], 'г': ['F', 'f'], 'д': ['D', 'd'],
+  'е': ['E', 'e'], 'ё': ['¾', '³'], 'ж': ['j', 'J'], 'з': ['Ż', 'ż'], 'и': ['L', 'l'],
+  'й': ['“', '"'], 'к': ['K', 'k'], 'л': ['I', 'i'], 'н': ['Ĥ', 'H'], 'о': ['O', 'o'],
+  'п': ['R', 'r'], 'р': ['P', 'p'], 'с': ['C', 'c'], 'у': ['Y', 'y'], 'ф': ['G', 'g'],
+  'х': ['Ĥ', 'H'], 'ц': ['Č', 'č'], 'ч': ['–', '_'], 'ш': ['±', '+'], 'щ': ['#', ':'],
+  'ъ': ['\\', '/'], 'ы': ['‽', '?'], 'э': ['—', '-'], 'ю': ['@', '!'], 'я': ['·', "'"]
+};
+const DIGITS = {
+  '1': ['odlH', false], '2': ['d;a', false], '3': ['mpl', false], '4': ['_eT?pe', false],
+  '5': ["r'm", true], '6': ['+ecm', true], '7': ['Ce*', true], '8': [';oce*', true],
+  '9': ["de;'m", true], '0': ['Hoi', true]
+};
+const SYMBOLS = {
+  '@': '£', '#': '€', '₽': '$', '_': '¢', '&': '^', '-': '°', '+': '=', '(': '{', ')': '}',
+  '/': '\\', '*': '%', '"': '©', "'": '®', ':': '™', ';': '✓', '!': '[', '?': ']',
+  '~': 'ꚡ', '`': 'ꚣ', '|': 'ꚥ', '•': 'ꚨ', '√': 'ꛖ', 'π': 'ꚦ', '÷': 'ꚪ', '×': 'ꚬ',
+  '£': 'ꚶ', '€': 'ꚸ', '$': 'ꚺ', '¢': 'ꚼ', '^': 'ꛀ', '°': 'ꛁ', '=': 'ꛈ', '{': 'ꛊ',
+  '}': 'ꛌ', '\\': 'ꛐ', '%': 'ꛒ', '©': 'ꛕ', '®': 'ꛗ', '™': 'ꛘ', '✓': 'ꛠ', '[': 'ꛣ', ']': 'ꛤ'
+};
+const SKIP = '\u0000skip', ERASE = '\u0000erase';
+const MORE = [
+  ['ꚡ', 'ꛦ'], ['ꚣ', 'ꛧ'], ['ꚥ', 'ꛨ'], ['ꚨ', 'ꛩ'], ['ꛖ', 'ꛩ'], ['ꚦ', 'ꛪ'], ['ꚪ', 'ꛫ'],
+  ['ꚶ', '@'], ['ꚸ', '#'], ['ꚺ', '$'], ['ꚼ', '_'], ['ꛀ', '_'], ['ꛁ', '&'], ['ꛐ', '/'], ['ꛌ', ')'],
+  ['ꛊ', '('], ['ꛈ', '∆'], ['ꛒ', SKIP], ['ꛕ', '*'], ['ꛗ', '"'], ['ꛘ', "'"], ['ꛤ', ERASE],
+  ['ꛣ', '꛷'], ['ꛠ', '꛲'], ['ꚬ', 'ꛬ'], ['ꚮ', 'ꛭ'], ['ꚱ', 'ꛮ'], ['ꚲ', 'ꛮ'], ['ꚳ', 'ꛯ'],
+  ['ꛄ', '-'], ['ꛆ', '+'], ['ꛚ', '꛴'], ['ꛜ', '꛴'], ['ꚿ', '꛶'],
+  ['ꛦ', '~'], ['ꛧ', '`'], ['ꛨ', '|'], ['ꛩ', '•'], ['ꛪ', '√'], ['ꛫ', 'π'], ['ꛬ', '÷'], ['ꛭ', '×'],
+  ['ꛮ', '§'], ['ꛯ', '∆'], ['꛴', '™'], ['꛶', '✓'], ['꛲', '['], ['꛷', ']'],
+  ['¹½⅓¼⅕⅙⅐⅛⅑⅒', '~'], ['²⅔⅖', '`'], ['³⅗¾⅜', '|'], ['⁴⅘', '♪'], ['⁵⅝⅚', '√'],
+  ['⁶', 'Π'], ['⁷⅞', '÷'], ['⁸', '×'], ['⁹', '¶'], ['⁰ⁿ∅', '∆'],
+  ['.', ','], ['±', '≠'], ['∆', 'ꚳ'], ['§', 'ꚲ'],
+  ['¶', 'ꛯ'], ['№', '¢'], ['—', '′'], ['–', '′'], ['·', '″'], ['★', '‰'], ['†', '‰'], ['‡', '℅'],
+  ['“„”', '©'], ['’‘‚', '®'], ['¡', '['], ['¿‽', ']'], ['♪', 'ꛨ'], ['Π', 'ꛪ'], ['Ω', 'ꛪ'], ['μ', 'ꛪ'],
+  ['↑←↓→', 'ꛀ'], ['≠', 'ꛈ'], ['∞', 'ꛈ'], ['≈', 'ꛈ'], ['‰', 'ꛒ'], ['℅', 'ꛒ'],
+  ['<', '>'], ['>', '<'], ['≤', '≥'], ['≥', '≤'], ['⟨', '⟩'], ['⟩', '⟨'],
+  ['‹', '›'], ['›', '‹'], ['«', '»'], ['»', '«']
+];
+for (const [keys, v] of MORE) for (const k of keys) SYMBOLS[k] = v;
+/* два одинаковых знака подряд сливаются в один; «« и »» не сливаются */
+const ANGLE = { '<': '≤', '>': '≥', '≤': '⟨', '≥': '⟩', '⟨': '‹', '⟩': '›', '‹': '«', '›': '»' };
+/* [заглавная, строчная] для двух одинаковых букв подряд */
+const DOUBLES = {
+  a: ['Æ', 'æ'], b: ['Ω', '‰'], c: ['ẞ', 'ß'], d: ['Ð', 'ð'], e: ['Ě', 'ě'], f: ['Ê', 'ê'],
+  g: ['Ğ', 'ğ'], h: ['ŉ', 'ŉ'], i: ['Ĩ', 'ĩ'], j: ['Ĵ', 'ĵ'], k: ['Ķ', 'ķ'], l: ['Ŀ', 'ŀ'],
+  m: ['μ', '℅'], n: ['Ñ', 'ñ'], o: ['Œ', 'œ'], p: ['Ř', 'ř'], q: ['⁵', 'Π'], r: ['Ŕ', 'ŕ'],
+  s: ['Ç', 'ç'], t: ['Ť', 'ť'], u: ['Ÿ', 'ÿ'], v: ['Ⓥ', '⚔︎'], w: ['Ŵ', 'ŵ'],
+  x: ['⠀', '✷'], y: ['Ũ', 'ũ'], z: ['Ž', 'ž']
+};
+const MARKS = ['★', '☆', '✰', '♙', '♘', '♗', '♖', '♕', '♔', '♟', '♞', '♝', '♜', '♛', '♚', '≈'];
+const NUMSEQ = ['¹', '½', '⅓', '¼', '⅕', '⅙', '⅐', '⅛', '⅑', '⅒', '²', '⅔', '⅖', '⅗', '⅜', '⁴',
+  '⅘', '⁵', '⅚', '⅝', '⁶', '⁷', '⅞', '⁸', '⁹', '⁰', 'ⁿ', '∅'];
+const VOWELS = new Set([...'aeiouаеиоу']);
+/* гласной считается соседняя буква, только если её перевод это A E I O U или Y */
+const VOWEL_OUT = new Set([...'аелоуaelouy']);
+const outVowel = (L) => (L.def ? 'aeiouy'.includes(L.k) : VOWEL_OUT.has(L.k));
+const INSIDE_PARENS = { 'L': 'Ł', 'l': 'ł', 'Ż': 'Z', 'ż': 'z' };
+const FOLD = {
+  'Ł': 'L', 'ł': 'l', 'Ŧ': 'T', 'ŧ': 't', 'Ð': 'D', 'ð': 'd', 'Þ': 'T', 'þ': 't',
+  'Đ': 'D', 'đ': 'd', 'Ø': 'O', 'ø': 'o', 'Ŀ': 'L', 'ŀ': 'l',
+  'ß': 's', 'ẞ': 'S', 'Æ': 'A', 'æ': 'a', 'Œ': 'O', 'œ': 'o', 'ŉ': 'n', 'ſ': 's', 'ĸ': 'k'
+};
+const LATIN = 'A-Za-z\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u024F\\u1E00-\\u1EFF';
+const DEFECT = /[\u00C0-\u024F\u1E00-\u1EFF]/;
+const CYR = '\\u0401\\u0410-\\u044F\\u0451';
+const EMOJI_SRC = '[\\u{1F110}-\\u{1F129}\\u{1F130}-\\u{1F149}\\u{1F150}-\\u{1F169}\\u{1F170}-\\u{1F189}\\u24B6-\\u24FF\\u2460-\\u2473\\u2776-\\u2793][\\uFE0E\\uFE0F]?|\\p{Regional_Indicator}{1,2}|\\p{Extended_Pictographic}[\\uFE0E\\uFE0F]?\\p{Emoji_Modifier}?(?:\\u200D\\p{Extended_Pictographic}[\\uFE0E\\uFE0F]?\\p{Emoji_Modifier}?)*[\\u{E0020}-\\u{E007F}]*';
+const TOKEN_SRC = '(' + EMOJI_SRC + ')|([' + LATIN + CYR + ']+)|(\\d+)|([\\s\\S])';
+
+function fold(ch) {
+  if (FOLD[ch]) return FOLD[ch];
+  if (DEFECT.test(ch)) return ch.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return ch;
+}
+const EXEMPT = new Set([...'ꚡꚣꚥꚨꚬꛖꚦꚪꚶꚸꚺꚼꛀꛁꛐꛌꛊꛈꛒꛕꛗꛘꛤꛣꛠ']);
+function isLetter(s) {
+  const c = [...s][0];
+  const cp = c.codePointAt(0);
+  return EXEMPT.has(c) || (cp >= 0xA640 && cp <= 0xA6FF) || /^\p{L}/u.test(c);
+}
+function isUpper(s) { return s === s.toUpperCase() && s !== s.toLowerCase(); }
+
+function mergePair(a, b) {
+  if (a.s === ';' && b.s === ';') return '⎨';
+  const ba = fold(a.s), bb = fold(b.s);
+  if (!/^[A-Za-z]$/.test(ba) || !/^[A-Za-z]$/.test(bb)) return null;
+  const la = ba.toLowerCase(), lb = bb.toLowerCase();
+  const upA = isUpper(a.s);
+  if (a.br && b.br && la === lb) {
+    if (la === 'z') return upA ? 'Ź' : 'ź';
+    if (la === 'l') return upA ? 'Ľ' : 'ľ';
+  }
+  if (la === lb) return DOUBLES[la][upA ? 0 : 1];
+  const ra = a.s.toLowerCase(), rb = b.s.toLowerCase();
+  if ((ra === 's' && rb === 'x') || (ra === 'x' && rb === 's')) {
+    return (a.s !== ra || b.s !== rb) ? 'S' : 'ſ';
+  }
+  return null;
+}
+
+const norm = (s) => s.replace(/[︎️]/g, '');
+const FORMAT_SKIP = /[︎️‍⃣\u{E0020}-\u{E007F}]/u;
+/* квадратные смайлы: пишем то, что на них изображено */
+const SQUARED = {
+  '🆎': 'AB', '🆑': 'CL', '🆒': 'COOL', '🆓': 'FREE', '🆔': 'ID', '🆕': 'NEW', '🆖': 'NG', '🆗': 'OK',
+  '🆘': 'SOS', '🆙': 'UP!', '🆚': 'VS',
+  '🈁': 'ココ', '🈂': 'サ', '🈚': '無', '🈯': '指', '🈲': '禁', '🈳': '空', '🈴': '合', '🈵': '満',
+  '㊗': '祝', '㊙': '秘', 'Ⓜ': 'M',
+  '🈶': '有', '🈷': '月', '🈸': '申', '🈹': '割', '🈺': '営', '🉐': '得', '🉑': '可'
+};
+function squaredText(key) {
+  const cp = key.codePointAt(0);
+  if ([...key].length === 1) {
+    if (cp >= 0x1F110 && cp <= 0x1F129) return String.fromCharCode(65 + cp - 0x1F110);
+    if (cp >= 0x1F150 && cp <= 0x1F169) return String.fromCharCode(65 + cp - 0x1F150);
+    if (cp >= 0x24B6 && cp <= 0x24CF) return String.fromCharCode(65 + cp - 0x24B6);
+    if (cp >= 0x24D0 && cp <= 0x24E9) return String.fromCharCode(97 + cp - 0x24D0);
+    if (cp >= 0x2460 && cp <= 0x2473) return String(cp - 0x2460 + 1);
+    if (cp === 0x24EA || cp === 0x24FF) return '0';
+    if (cp >= 0x2776 && cp <= 0x277F) return String(cp - 0x2776 + 1);
+    if (cp >= 0x24EB && cp <= 0x24F4) return String(cp - 0x24EB + 11);
+    if (cp >= 0x24F5 && cp <= 0x24FE) return String(cp - 0x24F5 + 1);
+    if (cp >= 0x2780 && cp <= 0x2789) return String(cp - 0x2780 + 1);
+    if (cp >= 0x278A && cp <= 0x2793) return String(cp - 0x278A + 1);
+    if (cp >= 0x1F130 && cp <= 0x1F149) return String.fromCharCode(65 + cp - 0x1F130);
+    if (cp >= 0x1F170 && cp <= 0x1F189) return String.fromCharCode(65 + cp - 0x1F170);
+  }
+  return Object.prototype.hasOwnProperty.call(SQUARED, key) ? SQUARED[key] : null;
+}
+const EMO_ARROWS = ['←', '↑', '↓', '→'];
+const LETTER_EMOJI = { a: '🅰️', b: '🅱️', o: '😮', v: '✌️', x: '❌' };
+const EMOJI_RE = new RegExp(EMOJI_SRC, 'gu');
+
+/* английские названия из Unicode: запасной вариант, если русского названия нет */
+const EMOJI_EN = {"©":"copyright sign","®":"registered sign","‼":"double exclamation mark","⁉":"exclamation question mark","™":"trade mark sign","ℹ":"information source","↔":"left right arrow","↕":"up down arrow","↖":"north west arrow","↗":"north east arrow","↘":"south east arrow","↙":"south west arrow","↩":"leftwards arrow with hook","↪":"rightwards arrow with hook","⌚":"watch","⌛":"hourglass","⌨":"keyboard","⎈":"helm symbol","⏏":"eject symbol","⏩":"black right-pointing double triangle","⏪":"black left-pointing double triangle","⏫":"black up-pointing double triangle","⏬":"black down-pointing double triangle","⏭":"black right-pointing double triangle with vertical bar","⏮":"black left-pointing double triangle with vertical bar","⏯":"black right-pointing triangle with double vertical bar","⏰":"alarm clock","⏱":"stopwatch","⏲":"timer clock","⏳":"hourglass with flowing sand","⏸":"double vertical bar","⏹":"black square for stop","⏺":"black circle for record","Ⓜ":"circled latin capital letter m","▪":"black small square","▫":"white small square","▶":"black right-pointing triangle","◀":"black left-pointing triangle","◻":"white medium square","◼":"black medium square","◽":"white medium small square","◾":"black medium small square","☀":"black sun with rays","☁":"cloud","☂":"umbrella","☃":"snowman","☄":"comet","★":"black star","☇":"lightning","☈":"thunderstorm","☉":"sun","☊":"ascending node","☋":"descending node","☌":"conjunction","☍":"opposition","☎":"black telephone","☏":"white telephone","☐":"ballot box","☑":"ballot box with check","☒":"ballot box with x","☔":"umbrella with rain drops","☕":"hot beverage","☖":"white shogi piece","☗":"black shogi piece","☘":"shamrock","☙":"reversed rotated floral heart bullet","☚":"black left pointing index","☛":"black right pointing index","☜":"white left pointing index","☝":"white up pointing index","☞":"white right pointing index","☟":"white down pointing index","☠":"skull and crossbones","☡":"caution sign","☢":"radioactive sign","☣":"biohazard sign","☤":"caduceus","☥":"ankh","☦":"orthodox cross","☧":"chi rho","☨":"cross of lorraine","☩":"cross of jerusalem","☪":"star and crescent","☫":"farsi symbol","☬":"adi shakti","☭":"hammer and sickle","☮":"peace symbol","☯":"yin yang","☰":"trigram for heaven","☱":"trigram for lake","☲":"trigram for fire","☳":"trigram for thunder","☴":"trigram for wind","☵":"trigram for water","☶":"trigram for mountain","☷":"trigram for earth","☸":"wheel of dharma","☹":"white frowning face","☺":"white smiling face","☻":"black smiling face","☼":"white sun with rays","☽":"first quarter moon","☾":"last quarter moon","☿":"mercury","♀":"female sign","♁":"earth","♂":"male sign","♃":"jupiter","♄":"saturn","♅":"uranus","♆":"neptune","♇":"pluto","♈":"aries","♉":"taurus","♊":"gemini","♋":"cancer","♌":"leo","♍":"virgo","♎":"libra","♏":"scorpius","♐":"sagittarius","♑":"capricorn","♒":"aquarius","♓":"pisces","♔":"white chess king","♕":"white chess queen","♖":"white chess rook","♗":"white chess bishop","♘":"white chess knight","♙":"white chess pawn","♚":"black chess king","♛":"black chess queen","♜":"black chess rook","♝":"black chess bishop","♞":"black chess knight","♟":"black chess pawn","♠":"black spade suit","♡":"white heart suit","♢":"white diamond suit","♣":"black club suit","♤":"white spade suit","♥":"black heart suit","♦":"black diamond suit","♧":"white club suit","♨":"hot springs","♩":"quarter note","♪":"eighth note","♫":"beamed eighth notes","♬":"beamed sixteenth notes","♭":"music flat sign","♮":"music natural sign","♯":"music sharp sign","♰":"west syriac cross","♱":"east syriac cross","♲":"universal recycling symbol","♳":"recycling symbol for type-1 plastics","♴":"recycling symbol for type-2 plastics","♵":"recycling symbol for type-3 plastics","♶":"recycling symbol for type-4 plastics","♷":"recycling symbol for type-5 plastics","♸":"recycling symbol for type-6 plastics","♹":"recycling symbol for type-7 plastics","♺":"recycling symbol for generic materials","♻":"black universal recycling symbol","♼":"recycled paper symbol","♽":"partially-recycled paper symbol","♾":"permanent paper sign","♿":"wheelchair symbol","⚀":"die face-1","⚁":"die face-2","⚂":"die face-3","⚃":"die face-4","⚄":"die face-5","⚅":"die face-6","⚐":"white flag","⚑":"black flag","⚒":"hammer and pick","⚓":"anchor","⚔":"crossed swords","⚕":"staff of aesculapius","⚖":"scales","⚗":"alembic","⚘":"flower","⚙":"gear","⚚":"staff of hermes","⚛":"atom symbol","⚜":"fleur-de-lis","⚝":"outlined white star","⚞":"three lines converging right","⚟":"three lines converging left","⚠":"warning sign","⚡":"high voltage sign","⚢":"doubled female sign","⚣":"doubled male sign","⚤":"interlocked female and male sign","⚥":"male and female sign","⚦":"male with stroke sign","⚧":"male with stroke and male and female sign","⚨":"vertical male with stroke sign","⚩":"horizontal male with stroke sign","⚪":"medium white circle","⚫":"medium black circle","⚬":"medium small white circle","⚭":"marriage symbol","⚮":"divorce symbol","⚯":"unmarried partnership symbol","⚰":"coffin","⚱":"funeral urn","⚲":"neuter","⚳":"ceres","⚴":"pallas","⚵":"juno","⚶":"vesta","⚷":"chiron","⚸":"black moon lilith","⚹":"sextile","⚺":"semisextile","⚻":"quincunx","⚼":"sesquiquadrate","⚽":"soccer ball","⚾":"baseball","⚿":"squared key","⛀":"white draughts man","⛁":"white draughts king","⛂":"black draughts man","⛃":"black draughts king","⛄":"snowman without snow","⛅":"sun behind cloud","⛆":"rain","⛇":"black snowman","⛈":"thunder cloud and rain","⛉":"turned white shogi piece","⛊":"turned black shogi piece","⛋":"white diamond in square","⛌":"crossing lanes","⛍":"disabled car","⛎":"ophiuchus","⛏":"pick","⛐":"car sliding","⛑":"helmet with white cross","⛒":"circled crossing lanes","⛓":"chains","⛔":"no entry","⛕":"alternate one-way left way traffic","⛖":"black two-way left way traffic","⛗":"white two-way left way traffic","⛘":"black left lane merge","⛙":"white left lane merge","⛚":"drive slow sign","⛛":"heavy white down-pointing triangle","⛜":"left closed entry","⛝":"squared saltire","⛞":"falling diagonal in white circle in black square","⛟":"black truck","⛠":"restricted left entry-1","⛡":"restricted left entry-2","⛢":"astronomical symbol for uranus","⛣":"heavy circle with stroke and two dots above","⛤":"pentagram","⛥":"right-handed interlaced pentagram","⛦":"left-handed interlaced pentagram","⛧":"inverted pentagram","⛨":"black cross on shield","⛩":"shinto shrine","⛪":"church","⛫":"castle","⛬":"historic site","⛭":"gear without hub","⛮":"gear with handles","⛯":"map symbol for lighthouse","⛰":"mountain","⛱":"umbrella on ground","⛲":"fountain","⛳":"flag in hole","⛴":"ferry","⛵":"sailboat","⛶":"square four corners","⛷":"skier","⛸":"ice skate","⛹":"person with ball","⛺":"tent","⛻":"japanese bank symbol","⛼":"headstone graveyard symbol","⛽":"fuel pump","⛾":"cup on black square","⛿":"white flag with horizontal middle black stripe","✀":"black safety scissors","✁":"upper blade scissors","✂":"black scissors","✃":"lower blade scissors","✄":"white scissors","✅":"white heavy check mark","✈":"airplane","✉":"envelope","✊":"raised fist","✋":"raised hand","✌":"victory hand","✍":"writing hand","✎":"lower right pencil","✏":"pencil","✐":"upper right pencil","✑":"white nib","✒":"black nib","✔":"heavy check mark","✖":"heavy multiplication x","✝":"latin cross","✡":"star of david","✨":"sparkles","✳":"eight spoked asterisk","✴":"eight pointed black star","❄":"snowflake","❇":"sparkle","❌":"cross mark","❎":"negative squared cross mark","❓":"black question mark ornament","❔":"white question mark ornament","❕":"white exclamation mark ornament","❗":"heavy exclamation mark symbol","❣":"heavy heart exclamation mark ornament","❤":"heavy black heart","❥":"rotated heavy black heart bullet","❦":"floral heart","❧":"rotated floral heart bullet","➕":"heavy plus sign","➖":"heavy minus sign","➗":"heavy division sign","➡":"black rightwards arrow","➰":"curly loop","➿":"double curly loop","⤴":"arrow pointing rightwards then curving upwards","⤵":"arrow pointing rightwards then curving downwards","⬅":"leftwards black arrow","⬆":"upwards black arrow","⬇":"downwards black arrow","⬛":"black large square","⬜":"white large square","⭐":"white medium star","⭕":"heavy large circle","〰":"wavy dash","〽":"part alternation mark","㊗":"circled ideograph congratulation","㊙":"circled ideograph secret","🀀":"mahjong tile east wind","🀁":"mahjong tile south wind","🀂":"mahjong tile west wind","🀃":"mahjong tile north wind","🀄":"mahjong tile red dragon","🀅":"mahjong tile green dragon","🀆":"mahjong tile white dragon","🀇":"mahjong tile one of characters","🀈":"mahjong tile two of characters","🀉":"mahjong tile three of characters","🀊":"mahjong tile four of characters","🀋":"mahjong tile five of characters","🀌":"mahjong tile six of characters","🀍":"mahjong tile seven of characters","🀎":"mahjong tile eight of characters","🀏":"mahjong tile nine of characters","🀐":"mahjong tile one of bamboos","🀑":"mahjong tile two of bamboos","🀒":"mahjong tile three of bamboos","🀓":"mahjong tile four of bamboos","🀔":"mahjong tile five of bamboos","🀕":"mahjong tile six of bamboos","🀖":"mahjong tile seven of bamboos","🀗":"mahjong tile eight of bamboos","🀘":"mahjong tile nine of bamboos","🀙":"mahjong tile one of circles","🀚":"mahjong tile two of circles","🀛":"mahjong tile three of circles","🀜":"mahjong tile four of circles","🀝":"mahjong tile five of circles","🀞":"mahjong tile six of circles","🀟":"mahjong tile seven of circles","🀠":"mahjong tile eight of circles","🀡":"mahjong tile nine of circles","🀢":"mahjong tile plum","🀣":"mahjong tile orchid","🀤":"mahjong tile bamboo","🀥":"mahjong tile chrysanthemum","🀦":"mahjong tile spring","🀧":"mahjong tile summer","🀨":"mahjong tile autumn","🀩":"mahjong tile winter","🀪":"mahjong tile joker","🀫":"mahjong tile back","🀰":"domino tile horizontal back","🀱":"domino tile horizontal-00-00","🀲":"domino tile horizontal-00-01","🀳":"domino tile horizontal-00-02","🀴":"domino tile horizontal-00-03","🀵":"domino tile horizontal-00-04","🀶":"domino tile horizontal-00-05","🀷":"domino tile horizontal-00-06","🀸":"domino tile horizontal-01-00","🀹":"domino tile horizontal-01-01","🀺":"domino tile horizontal-01-02","🀻":"domino tile horizontal-01-03","🀼":"domino tile horizontal-01-04","🀽":"domino tile horizontal-01-05","🀾":"domino tile horizontal-01-06","🀿":"domino tile horizontal-02-00","🁀":"domino tile horizontal-02-01","🁁":"domino tile horizontal-02-02","🁂":"domino tile horizontal-02-03","🁃":"domino tile horizontal-02-04","🁄":"domino tile horizontal-02-05","🁅":"domino tile horizontal-02-06","🁆":"domino tile horizontal-03-00","🁇":"domino tile horizontal-03-01","🁈":"domino tile horizontal-03-02","🁉":"domino tile horizontal-03-03","🁊":"domino tile horizontal-03-04","🁋":"domino tile horizontal-03-05","🁌":"domino tile horizontal-03-06","🁍":"domino tile horizontal-04-00","🁎":"domino tile horizontal-04-01","🁏":"domino tile horizontal-04-02","🁐":"domino tile horizontal-04-03","🁑":"domino tile horizontal-04-04","🁒":"domino tile horizontal-04-05","🁓":"domino tile horizontal-04-06","🁔":"domino tile horizontal-05-00","🁕":"domino tile horizontal-05-01","🁖":"domino tile horizontal-05-02","🁗":"domino tile horizontal-05-03","🁘":"domino tile horizontal-05-04","🁙":"domino tile horizontal-05-05","🁚":"domino tile horizontal-05-06","🁛":"domino tile horizontal-06-00","🁜":"domino tile horizontal-06-01","🁝":"domino tile horizontal-06-02","🁞":"domino tile horizontal-06-03","🁟":"domino tile horizontal-06-04","🁠":"domino tile horizontal-06-05","🁡":"domino tile horizontal-06-06","🁢":"domino tile vertical back","🁣":"domino tile vertical-00-00","🁤":"domino tile vertical-00-01","🁥":"domino tile vertical-00-02","🁦":"domino tile vertical-00-03","🁧":"domino tile vertical-00-04","🁨":"domino tile vertical-00-05","🁩":"domino tile vertical-00-06","🁪":"domino tile vertical-01-00","🁫":"domino tile vertical-01-01","🁬":"domino tile vertical-01-02","🁭":"domino tile vertical-01-03","🁮":"domino tile vertical-01-04","🁯":"domino tile vertical-01-05","🁰":"domino tile vertical-01-06","🁱":"domino tile vertical-02-00","🁲":"domino tile vertical-02-01","🁳":"domino tile vertical-02-02","🁴":"domino tile vertical-02-03","🁵":"domino tile vertical-02-04","🁶":"domino tile vertical-02-05","🁷":"domino tile vertical-02-06","🁸":"domino tile vertical-03-00","🁹":"domino tile vertical-03-01","🁺":"domino tile vertical-03-02","🁻":"domino tile vertical-03-03","🁼":"domino tile vertical-03-04","🁽":"domino tile vertical-03-05","🁾":"domino tile vertical-03-06","🁿":"domino tile vertical-04-00","🂀":"domino tile vertical-04-01","🂁":"domino tile vertical-04-02","🂂":"domino tile vertical-04-03","🂃":"domino tile vertical-04-04","🂄":"domino tile vertical-04-05","🂅":"domino tile vertical-04-06","🂆":"domino tile vertical-05-00","🂇":"domino tile vertical-05-01","🂈":"domino tile vertical-05-02","🂉":"domino tile vertical-05-03","🂊":"domino tile vertical-05-04","🂋":"domino tile vertical-05-05","🂌":"domino tile vertical-05-06","🂍":"domino tile vertical-06-00","🂎":"domino tile vertical-06-01","🂏":"domino tile vertical-06-02","🂐":"domino tile vertical-06-03","🂑":"domino tile vertical-06-04","🂒":"domino tile vertical-06-05","🂓":"domino tile vertical-06-06","🂠":"playing card back","🂡":"playing card ace of spades","🂢":"playing card two of spades","🂣":"playing card three of spades","🂤":"playing card four of spades","🂥":"playing card five of spades","🂦":"playing card six of spades","🂧":"playing card seven of spades","🂨":"playing card eight of spades","🂩":"playing card nine of spades","🂪":"playing card ten of spades","🂫":"playing card jack of spades","🂬":"playing card knight of spades","🂭":"playing card queen of spades","🂮":"playing card king of spades","🂱":"playing card ace of hearts","🂲":"playing card two of hearts","🂳":"playing card three of hearts","🂴":"playing card four of hearts","🂵":"playing card five of hearts","🂶":"playing card six of hearts","🂷":"playing card seven of hearts","🂸":"playing card eight of hearts","🂹":"playing card nine of hearts","🂺":"playing card ten of hearts","🂻":"playing card jack of hearts","🂼":"playing card knight of hearts","🂽":"playing card queen of hearts","🂾":"playing card king of hearts","🂿":"playing card red joker","🃁":"playing card ace of diamonds","🃂":"playing card two of diamonds","🃃":"playing card three of diamonds","🃄":"playing card four of diamonds","🃅":"playing card five of diamonds","🃆":"playing card six of diamonds","🃇":"playing card seven of diamonds","🃈":"playing card eight of diamonds","🃉":"playing card nine of diamonds","🃊":"playing card ten of diamonds","🃋":"playing card jack of diamonds","🃌":"playing card knight of diamonds","🃍":"playing card queen of diamonds","🃎":"playing card king of diamonds","🃏":"playing card black joker","🃑":"playing card ace of clubs","🃒":"playing card two of clubs","🃓":"playing card three of clubs","🃔":"playing card four of clubs","🃕":"playing card five of clubs","🃖":"playing card six of clubs","🃗":"playing card seven of clubs","🃘":"playing card eight of clubs","🃙":"playing card nine of clubs","🃚":"playing card ten of clubs","🃛":"playing card jack of clubs","🃜":"playing card knight of clubs","🃝":"playing card queen of clubs","🃞":"playing card king of clubs","🃟":"playing card white joker","🃠":"playing card fool","🃡":"playing card trump-1","🃢":"playing card trump-2","🃣":"playing card trump-3","🃤":"playing card trump-4","🃥":"playing card trump-5","🃦":"playing card trump-6","🃧":"playing card trump-7","🃨":"playing card trump-8","🃩":"playing card trump-9","🃪":"playing card trump-10","🃫":"playing card trump-11","🃬":"playing card trump-12","🃭":"playing card trump-13","🃮":"playing card trump-14","🃯":"playing card trump-15","🃰":"playing card trump-16","🃱":"playing card trump-17","🃲":"playing card trump-18","🃳":"playing card trump-19","🃴":"playing card trump-20","🃵":"playing card trump-21","🄍":"circled zero with slash","🄎":"circled anticlockwise arrow","🄏":"circled dollar sign with overlaid backslash","🄯":"copyleft symbol","🅬":"raised mr sign","🅭":"circled cc","🅮":"circled c with overlaid backslash","🅯":"circled human figure","🅰":"negative squared latin capital letter a","🅱":"negative squared latin capital letter b","🅾":"negative squared latin capital letter o","🅿":"negative squared latin capital letter p","🆎":"negative squared ab","🆑":"squared cl","🆒":"squared cool","🆓":"squared free","🆔":"squared id","🆕":"squared new","🆖":"squared ng","🆗":"squared ok","🆘":"squared sos","🆙":"squared up with exclamation mark","🆚":"squared vs","🆭":"mask work symbol","🈁":"squared katakana koko","🈂":"squared katakana sa","🈚":"squared cjk unified ideograph-7121","🈯":"squared cjk unified ideograph-6307","🈲":"squared cjk unified ideograph-7981","🈳":"squared cjk unified ideograph-7a7a","🈴":"squared cjk unified ideograph-5408","🈵":"squared cjk unified ideograph-6e80","🈶":"squared cjk unified ideograph-6709","🈷":"squared cjk unified ideograph-6708","🈸":"squared cjk unified ideograph-7533","🈹":"squared cjk unified ideograph-5272","🈺":"squared cjk unified ideograph-55b6","🉐":"circled ideograph advantage","🉑":"circled ideograph accept","🉠":"rounded symbol for fu","🉡":"rounded symbol for lu","🉢":"rounded symbol for shou","🉣":"rounded symbol for xi","🉤":"rounded symbol for shuangxi","🉥":"rounded symbol for cai","🌀":"cyclone","🌁":"foggy","🌂":"closed umbrella","🌃":"night with stars","🌄":"sunrise over mountains","🌅":"sunrise","🌆":"cityscape at dusk","🌇":"sunset over buildings","🌈":"rainbow","🌉":"bridge at night","🌊":"water wave","🌋":"volcano","🌌":"milky way","🌍":"earth globe europe-africa","🌎":"earth globe americas","🌏":"earth globe asia-australia","🌐":"globe with meridians","🌑":"new moon symbol","🌒":"waxing crescent moon symbol","🌓":"first quarter moon symbol","🌔":"waxing gibbous moon symbol","🌕":"full moon symbol","🌖":"waning gibbous moon symbol","🌗":"last quarter moon symbol","🌘":"waning crescent moon symbol","🌙":"crescent moon","🌚":"new moon with face","🌛":"first quarter moon with face","🌜":"last quarter moon with face","🌝":"full moon with face","🌞":"sun with face","🌟":"glowing star","🌠":"shooting star","🌡":"thermometer","🌢":"black droplet","🌣":"white sun","🌤":"white sun with small cloud","🌥":"white sun behind cloud","🌦":"white sun behind cloud with rain","🌧":"cloud with rain","🌨":"cloud with snow","🌩":"cloud with lightning","🌪":"cloud with tornado","🌫":"fog","🌬":"wind blowing face","🌭":"hot dog","🌮":"taco","🌯":"burrito","🌰":"chestnut","🌱":"seedling","🌲":"evergreen tree","🌳":"deciduous tree","🌴":"palm tree","🌵":"cactus","🌶":"hot pepper","🌷":"tulip","🌸":"cherry blossom","🌹":"rose","🌺":"hibiscus","🌻":"sunflower","🌼":"blossom","🌽":"ear of maize","🌾":"ear of rice","🌿":"herb","🍀":"four leaf clover","🍁":"maple leaf","🍂":"fallen leaf","🍃":"leaf fluttering in wind","🍄":"mushroom","🍅":"tomato","🍆":"aubergine","🍇":"grapes","🍈":"melon","🍉":"watermelon","🍊":"tangerine","🍋":"lemon","🍌":"banana","🍍":"pineapple","🍎":"red apple","🍏":"green apple","🍐":"pear","🍑":"peach","🍒":"cherries","🍓":"strawberry","🍔":"hamburger","🍕":"slice of pizza","🍖":"meat on bone","🍗":"poultry leg","🍘":"rice cracker","🍙":"rice ball","🍚":"cooked rice","🍛":"curry and rice","🍜":"steaming bowl","🍝":"spaghetti","🍞":"bread","🍟":"french fries","🍠":"roasted sweet potato","🍡":"dango","🍢":"oden","🍣":"sushi","🍤":"fried shrimp","🍥":"fish cake with swirl design","🍦":"soft ice cream","🍧":"shaved ice","🍨":"ice cream","🍩":"doughnut","🍪":"cookie","🍫":"chocolate bar","🍬":"candy","🍭":"lollipop","🍮":"custard","🍯":"honey pot","🍰":"shortcake","🍱":"bento box","🍲":"pot of food","🍳":"cooking","🍴":"fork and knife","🍵":"teacup without handle","🍶":"sake bottle and cup","🍷":"wine glass","🍸":"cocktail glass","🍹":"tropical drink","🍺":"beer mug","🍻":"clinking beer mugs","🍼":"baby bottle","🍽":"fork and knife with plate","🍾":"bottle with popping cork","🍿":"popcorn","🎀":"ribbon","🎁":"wrapped present","🎂":"birthday cake","🎃":"jack-o-lantern","🎄":"christmas tree","🎅":"father christmas","🎆":"fireworks","🎇":"firework sparkler","🎈":"balloon","🎉":"party popper","🎊":"confetti ball","🎋":"tanabata tree","🎌":"crossed flags","🎍":"pine decoration","🎎":"japanese dolls","🎏":"carp streamer","🎐":"wind chime","🎑":"moon viewing ceremony","🎒":"school satchel","🎓":"graduation cap","🎔":"heart with tip on the left","🎕":"bouquet of flowers","🎖":"military medal","🎗":"reminder ribbon","🎘":"musical keyboard with jacks","🎙":"studio microphone","🎚":"level slider","🎛":"control knobs","🎜":"beamed ascending musical notes","🎝":"beamed descending musical notes","🎞":"film frames","🎟":"admission tickets","🎠":"carousel horse","🎡":"ferris wheel","🎢":"roller coaster","🎣":"fishing pole and fish","🎤":"microphone","🎥":"movie camera","🎦":"cinema","🎧":"headphone","🎨":"artist palette","🎩":"top hat","🎪":"circus tent","🎫":"ticket","🎬":"clapper board","🎭":"performing arts","🎮":"video game","🎯":"direct hit","🎰":"slot machine","🎱":"billiards","🎲":"game die","🎳":"bowling","🎴":"flower playing cards","🎵":"musical note","🎶":"multiple musical notes","🎷":"saxophone","🎸":"guitar","🎹":"musical keyboard","🎺":"trumpet","🎻":"violin","🎼":"musical score","🎽":"running shirt with sash","🎾":"tennis racquet and ball","🎿":"ski and ski boot","🏀":"basketball and hoop","🏁":"chequered flag","🏂":"snowboarder","🏃":"runner","🏄":"surfer","🏅":"sports medal","🏆":"trophy","🏇":"horse racing","🏈":"american football","🏉":"rugby football","🏊":"swimmer","🏋":"weight lifter","🏌":"golfer","🏍":"racing motorcycle","🏎":"racing car","🏏":"cricket bat and ball","🏐":"volleyball","🏑":"field hockey stick and ball","🏒":"ice hockey stick and puck","🏓":"table tennis paddle and ball","🏔":"snow capped mountain","🏕":"camping","🏖":"beach with umbrella","🏗":"building construction","🏘":"house buildings","🏙":"cityscape","🏚":"derelict house building","🏛":"classical building","🏜":"desert","🏝":"desert island","🏞":"national park","🏟":"stadium","🏠":"house building","🏡":"house with garden","🏢":"office building","🏣":"japanese post office","🏤":"european post office","🏥":"hospital","🏦":"bank","🏧":"automated teller machine","🏨":"hotel","🏩":"love hotel","🏪":"convenience store","🏫":"school","🏬":"department store","🏭":"factory","🏮":"izakaya lantern","🏯":"japanese castle","🏰":"european castle","🏱":"white pennant","🏲":"black pennant","🏳":"waving white flag","🏴":"waving black flag","🏵":"rosette","🏶":"black rosette","🏷":"label","🏸":"badminton racquet and shuttlecock","🏹":"bow and arrow","🏺":"amphora","🐀":"rat","🐁":"mouse","🐂":"ox","🐃":"water buffalo","🐄":"cow","🐅":"tiger","🐆":"leopard","🐇":"rabbit","🐈":"cat","🐉":"dragon","🐊":"crocodile","🐋":"whale","🐌":"snail","🐍":"snake","🐎":"horse","🐏":"ram","🐐":"goat","🐑":"sheep","🐒":"monkey","🐓":"rooster","🐔":"chicken","🐕":"dog","🐖":"pig","🐗":"boar","🐘":"elephant","🐙":"octopus","🐚":"spiral shell","🐛":"bug","🐜":"ant","🐝":"honeybee","🐞":"lady beetle","🐟":"fish","🐠":"tropical fish","🐡":"blowfish","🐢":"turtle","🐣":"hatching chick","🐤":"baby chick","🐥":"front-facing baby chick","🐦":"bird","🐧":"penguin","🐨":"koala","🐩":"poodle","🐪":"dromedary camel","🐫":"bactrian camel","🐬":"dolphin","🐭":"mouse face","🐮":"cow face","🐯":"tiger face","🐰":"rabbit face","🐱":"cat face","🐲":"dragon face","🐳":"spouting whale","🐴":"horse face","🐵":"monkey face","🐶":"dog face","🐷":"pig face","🐸":"frog face","🐹":"hamster face","🐺":"wolf face","🐻":"bear face","🐼":"panda face","🐽":"pig nose","🐾":"paw prints","🐿":"chipmunk","👀":"eyes","👁":"eye","👂":"ear","👃":"nose","👄":"mouth","👅":"tongue","👆":"white up pointing backhand index","👇":"white down pointing backhand index","👈":"white left pointing backhand index","👉":"white right pointing backhand index","👊":"fisted hand sign","👋":"waving hand sign","👌":"ok hand sign","👍":"thumbs up sign","👎":"thumbs down sign","👏":"clapping hands sign","👐":"open hands sign","👑":"crown","👒":"womans hat","👓":"eyeglasses","👔":"necktie","👕":"t-shirt","👖":"jeans","👗":"dress","👘":"kimono","👙":"bikini","👚":"womans clothes","👛":"purse","👜":"handbag","👝":"pouch","👞":"mans shoe","👟":"athletic shoe","👠":"high-heeled shoe","👡":"womans sandal","👢":"womans boots","👣":"footprints","👤":"bust in silhouette","👥":"busts in silhouette","👦":"boy","👧":"girl","👨":"man","👩":"woman","👪":"family","👫":"man and woman holding hands","👬":"two men holding hands","👭":"two women holding hands","👮":"police officer","👯":"woman with bunny ears","👰":"bride with veil","👱":"person with blond hair","👲":"man with gua pi mao","👳":"man with turban","👴":"older man","👵":"older woman","👶":"baby","👷":"construction worker","👸":"princess","👹":"japanese ogre","👺":"japanese goblin","👻":"ghost","👼":"baby angel","👽":"extraterrestrial alien","👾":"alien monster","👿":"imp","💀":"skull","💁":"information desk person","💂":"guardsman","💃":"dancer","💄":"lipstick","💅":"nail polish","💆":"face massage","💇":"haircut","💈":"barber pole","💉":"syringe","💊":"pill","💋":"kiss mark","💌":"love letter","💍":"ring","💎":"gem stone","💏":"kiss","💐":"bouquet","💑":"couple with heart","💒":"wedding","💓":"beating heart","💔":"broken heart","💕":"two hearts","💖":"sparkling heart","💗":"growing heart","💘":"heart with arrow","💙":"blue heart","💚":"green heart","💛":"yellow heart","💜":"purple heart","💝":"heart with ribbon","💞":"revolving hearts","💟":"heart decoration","💠":"diamond shape with a dot inside","💡":"electric light bulb","💢":"anger symbol","💣":"bomb","💤":"sleeping symbol","💥":"collision symbol","💦":"splashing sweat symbol","💧":"droplet","💨":"dash symbol","💩":"pile of poo","💪":"flexed biceps","💫":"dizzy symbol","💬":"speech balloon","💭":"thought balloon","💮":"white flower","💯":"hundred points symbol","💰":"money bag","💱":"currency exchange","💲":"heavy dollar sign","💳":"credit card","💴":"banknote with yen sign","💵":"banknote with dollar sign","💶":"banknote with euro sign","💷":"banknote with pound sign","💸":"money with wings","💹":"chart with upwards trend and yen sign","💺":"seat","💻":"personal computer","💼":"briefcase","💽":"minidisc","💾":"floppy disk","💿":"optical disc","📀":"dvd","📁":"file folder","📂":"open file folder","📃":"page with curl","📄":"page facing up","📅":"calendar","📆":"tear-off calendar","📇":"card index","📈":"chart with upwards trend","📉":"chart with downwards trend","📊":"bar chart","📋":"clipboard","📌":"pushpin","📍":"round pushpin","📎":"paperclip","📏":"straight ruler","📐":"triangular ruler","📑":"bookmark tabs","📒":"ledger","📓":"notebook","📔":"notebook with decorative cover","📕":"closed book","📖":"open book","📗":"green book","📘":"blue book","📙":"orange book","📚":"books","📛":"name badge","📜":"scroll","📝":"memo","📞":"telephone receiver","📟":"pager","📠":"fax machine","📡":"satellite antenna","📢":"public address loudspeaker","📣":"cheering megaphone","📤":"outbox tray","📥":"inbox tray","📦":"package","📧":"e-mail symbol","📨":"incoming envelope","📩":"envelope with downwards arrow above","📪":"closed mailbox with lowered flag","📫":"closed mailbox with raised flag","📬":"open mailbox with raised flag","📭":"open mailbox with lowered flag","📮":"postbox","📯":"postal horn","📰":"newspaper","📱":"mobile phone","📲":"mobile phone with rightwards arrow at left","📳":"vibration mode","📴":"mobile phone off","📵":"no mobile phones","📶":"antenna with bars","📷":"camera","📸":"camera with flash","📹":"video camera","📺":"television","📻":"radio","📼":"videocassette","📽":"film projector","📾":"portable stereo","📿":"prayer beads","🔀":"twisted rightwards arrows","🔁":"clockwise rightwards and leftwards open circle arrows","🔂":"clockwise rightwards and leftwards open circle arrows with circled one overlay","🔃":"clockwise downwards and upwards open circle arrows","🔄":"anticlockwise downwards and upwards open circle arrows","🔅":"low brightness symbol","🔆":"high brightness symbol","🔇":"speaker with cancellation stroke","🔈":"speaker","🔉":"speaker with one sound wave","🔊":"speaker with three sound waves","🔋":"battery","🔌":"electric plug","🔍":"left-pointing magnifying glass","🔎":"right-pointing magnifying glass","🔏":"lock with ink pen","🔐":"closed lock with key","🔑":"key","🔒":"lock","🔓":"open lock","🔔":"bell","🔕":"bell with cancellation stroke","🔖":"bookmark","🔗":"link symbol","🔘":"radio button","🔙":"back with leftwards arrow above","🔚":"end with leftwards arrow above","🔛":"on with exclamation mark with left right arrow above","🔜":"soon with rightwards arrow above","🔝":"top with upwards arrow above","🔞":"no one under eighteen symbol","🔟":"keycap ten","🔠":"input symbol for latin capital letters","🔡":"input symbol for latin small letters","🔢":"input symbol for numbers","🔣":"input symbol for symbols","🔤":"input symbol for latin letters","🔥":"fire","🔦":"electric torch","🔧":"wrench","🔨":"hammer","🔩":"nut and bolt","🔪":"hocho","🔫":"pistol","🔬":"microscope","🔭":"telescope","🔮":"crystal ball","🔯":"six pointed star with middle dot","🔰":"japanese symbol for beginner","🔱":"trident emblem","🔲":"black square button","🔳":"white square button","🔴":"large red circle","🔵":"large blue circle","🔶":"large orange diamond","🔷":"large blue diamond","🔸":"small orange diamond","🔹":"small blue diamond","🔺":"up-pointing red triangle","🔻":"down-pointing red triangle","🔼":"up-pointing small red triangle","🔽":"down-pointing small red triangle","🕆":"white latin cross","🕇":"heavy latin cross","🕈":"celtic cross","🕉":"om symbol","🕊":"dove of peace","🕋":"kaaba","🕌":"mosque","🕍":"synagogue","🕎":"menorah with nine branches","🕏":"bowl of hygieia","🕐":"clock face one oclock","🕑":"clock face two oclock","🕒":"clock face three oclock","🕓":"clock face four oclock","🕔":"clock face five oclock","🕕":"clock face six oclock","🕖":"clock face seven oclock","🕗":"clock face eight oclock","🕘":"clock face nine oclock","🕙":"clock face ten oclock","🕚":"clock face eleven oclock","🕛":"clock face twelve oclock","🕜":"clock face one-thirty","🕝":"clock face two-thirty","🕞":"clock face three-thirty","🕟":"clock face four-thirty","🕠":"clock face five-thirty","🕡":"clock face six-thirty","🕢":"clock face seven-thirty","🕣":"clock face eight-thirty","🕤":"clock face nine-thirty","🕥":"clock face ten-thirty","🕦":"clock face eleven-thirty","🕧":"clock face twelve-thirty","🕨":"right speaker","🕩":"right speaker with one sound wave","🕪":"right speaker with three sound waves","🕫":"bullhorn","🕬":"bullhorn with sound waves","🕭":"ringing bell","🕮":"book","🕯":"candle","🕰":"mantelpiece clock","🕱":"black skull and crossbones","🕲":"no piracy","🕳":"hole","🕴":"man in business suit levitating","🕵":"sleuth or spy","🕶":"dark sunglasses","🕷":"spider","🕸":"spider web","🕹":"joystick","🕺":"man dancing","🕻":"left hand telephone receiver","🕼":"telephone receiver with page","🕽":"right hand telephone receiver","🕾":"white touchtone telephone","🕿":"black touchtone telephone","🖀":"telephone on top of modem","🖁":"clamshell mobile phone","🖂":"back of envelope","🖃":"stamped envelope","🖄":"envelope with lightning","🖅":"flying envelope","🖆":"pen over stamped envelope","🖇":"linked paperclips","🖈":"black pushpin","🖉":"lower left pencil","🖊":"lower left ballpoint pen","🖋":"lower left fountain pen","🖌":"lower left paintbrush","🖍":"lower left crayon","🖎":"left writing hand","🖏":"turned ok hand sign","🖐":"raised hand with fingers splayed","🖑":"reversed raised hand with fingers splayed","🖒":"reversed thumbs up sign","🖓":"reversed thumbs down sign","🖔":"reversed victory hand","🖕":"reversed hand with middle finger extended","🖖":"raised hand with part between middle and ring fingers","🖗":"white down pointing left hand index","🖘":"sideways white left pointing index","🖙":"sideways white right pointing index","🖚":"sideways black left pointing index","🖛":"sideways black right pointing index","🖜":"black left pointing backhand index","🖝":"black right pointing backhand index","🖞":"sideways white up pointing index","🖟":"sideways white down pointing index","🖠":"sideways black up pointing index","🖡":"sideways black down pointing index","🖢":"black up pointing backhand index","🖣":"black down pointing backhand index","🖤":"black heart","🖥":"desktop computer","🖦":"keyboard and mouse","🖧":"three networked computers","🖨":"printer","🖩":"pocket calculator","🖪":"black hard shell floppy disk","🖫":"white hard shell floppy disk","🖬":"soft shell floppy disk","🖭":"tape cartridge","🖮":"wired keyboard","🖯":"one button mouse","🖰":"two button mouse","🖱":"three button mouse","🖲":"trackball","🖳":"old personal computer","🖴":"hard disk","🖵":"screen","🖶":"printer icon","🖷":"fax icon","🖸":"optical disc icon","🖹":"document with text","🖺":"document with text and picture","🖻":"document with picture","🖼":"frame with picture","🖽":"frame with tiles","🖾":"frame with an x","🖿":"black folder","🗀":"folder","🗁":"open folder","🗂":"card index dividers","🗃":"card file box","🗄":"file cabinet","🗅":"empty note","🗆":"empty note page","🗇":"empty note pad","🗈":"note","🗉":"note page","🗊":"note pad","🗋":"empty document","🗌":"empty page","🗍":"empty pages","🗎":"document","🗏":"page","🗐":"pages","🗑":"wastebasket","🗒":"spiral note pad","🗓":"spiral calendar pad","🗔":"desktop window","🗕":"minimize","🗖":"maximize","🗗":"overlap","🗘":"clockwise right and left semicircle arrows","🗙":"cancellation x","🗚":"increase font size symbol","🗛":"decrease font size symbol","🗜":"compression","🗝":"old key","🗞":"rolled-up newspaper","🗟":"page with circled text","🗠":"stock chart","🗡":"dagger knife","🗢":"lips","🗣":"speaking head in silhouette","🗤":"three rays above","🗥":"three rays below","🗦":"three rays left","🗧":"three rays right","🗨":"left speech bubble","🗩":"right speech bubble","🗪":"two speech bubbles","🗫":"three speech bubbles","🗬":"left thought bubble","🗭":"right thought bubble","🗮":"left anger bubble","🗯":"right anger bubble","🗰":"mood bubble","🗱":"lightning mood bubble","🗲":"lightning mood","🗳":"ballot box with ballot","🗴":"ballot script x","🗵":"ballot box with script x","🗶":"ballot bold script x","🗷":"ballot box with bold script x","🗸":"light check mark","🗹":"ballot box with bold check","🗺":"world map","🗻":"mount fuji","🗼":"tokyo tower","🗽":"statue of liberty","🗾":"silhouette of japan","🗿":"moyai","😀":"grinning face","😁":"grinning face with smiling eyes","😂":"face with tears of joy","😃":"smiling face with open mouth","😄":"smiling face with open mouth and smiling eyes","😅":"smiling face with open mouth and cold sweat","😆":"smiling face with open mouth and tightly-closed eyes","😇":"smiling face with halo","😈":"smiling face with horns","😉":"winking face","😊":"smiling face with smiling eyes","😋":"face savouring delicious food","😌":"relieved face","😍":"smiling face with heart-shaped eyes","😎":"smiling face with sunglasses","😏":"smirking face","😐":"neutral face","😑":"expressionless face","😒":"unamused face","😓":"face with cold sweat","😔":"pensive face","😕":"confused face","😖":"confounded face","😗":"kissing face","😘":"face throwing a kiss","😙":"kissing face with smiling eyes","😚":"kissing face with closed eyes","😛":"face with stuck-out tongue","😜":"face with stuck-out tongue and winking eye","😝":"face with stuck-out tongue and tightly-closed eyes","😞":"disappointed face","😟":"worried face","😠":"angry face","😡":"pouting face","😢":"crying face","😣":"persevering face","😤":"face with look of triumph","😥":"disappointed but relieved face","😦":"frowning face with open mouth","😧":"anguished face","😨":"fearful face","😩":"weary face","😪":"sleepy face","😫":"tired face","😬":"grimacing face","😭":"loudly crying face","😮":"face with open mouth","😯":"hushed face","😰":"face with open mouth and cold sweat","😱":"face screaming in fear","😲":"astonished face","😳":"flushed face","😴":"sleeping face","😵":"dizzy face","😶":"face without mouth","😷":"face with medical mask","😸":"grinning cat face with smiling eyes","😹":"cat face with tears of joy","😺":"smiling cat face with open mouth","😻":"smiling cat face with heart-shaped eyes","😼":"cat face with wry smile","😽":"kissing cat face with closed eyes","😾":"pouting cat face","😿":"crying cat face","🙀":"weary cat face","🙁":"slightly frowning face","🙂":"slightly smiling face","🙃":"upside-down face","🙄":"face with rolling eyes","🙅":"face with no good gesture","🙆":"face with ok gesture","🙇":"person bowing deeply","🙈":"see-no-evil monkey","🙉":"hear-no-evil monkey","🙊":"speak-no-evil monkey","🙋":"happy person raising one hand","🙌":"person raising both hands in celebration","🙍":"person frowning","🙎":"person with pouting face","🙏":"person with folded hands","🚀":"rocket","🚁":"helicopter","🚂":"steam locomotive","🚃":"railway car","🚄":"high-speed train","🚅":"high-speed train with bullet nose","🚆":"train","🚇":"metro","🚈":"light rail","🚉":"station","🚊":"tram","🚋":"tram car","🚌":"bus","🚍":"oncoming bus","🚎":"trolleybus","🚏":"bus stop","🚐":"minibus","🚑":"ambulance","🚒":"fire engine","🚓":"police car","🚔":"oncoming police car","🚕":"taxi","🚖":"oncoming taxi","🚗":"automobile","🚘":"oncoming automobile","🚙":"recreational vehicle","🚚":"delivery truck","🚛":"articulated lorry","🚜":"tractor","🚝":"monorail","🚞":"mountain railway","🚟":"suspension railway","🚠":"mountain cableway","🚡":"aerial tramway","🚢":"ship","🚣":"rowboat","🚤":"speedboat","🚥":"horizontal traffic light","🚦":"vertical traffic light","🚧":"construction sign","🚨":"police cars revolving light","🚩":"triangular flag on post","🚪":"door","🚫":"no entry sign","🚬":"smoking symbol","🚭":"no smoking symbol","🚮":"put litter in its place symbol","🚯":"do not litter symbol","🚰":"potable water symbol","🚱":"non-potable water symbol","🚲":"bicycle","🚳":"no bicycles","🚴":"bicyclist","🚵":"mountain bicyclist","🚶":"pedestrian","🚷":"no pedestrians","🚸":"children crossing","🚹":"mens symbol","🚺":"womens symbol","🚻":"restroom","🚼":"baby symbol","🚽":"toilet","🚾":"water closet","🚿":"shower","🛀":"bath","🛁":"bathtub","🛂":"passport control","🛃":"customs","🛄":"baggage claim","🛅":"left luggage","🛆":"triangle with rounded corners","🛇":"prohibited sign","🛈":"circled information source","🛉":"boys symbol","🛊":"girls symbol","🛋":"couch and lamp","🛌":"sleeping accommodation","🛍":"shopping bags","🛎":"bellhop bell","🛏":"bed","🛐":"place of worship","🛑":"octagonal sign","🛒":"shopping trolley","🛓":"stupa","🛔":"pagoda","🛕":"hindu temple","🛖":"hut","🛗":"elevator","🛜":"wireless","🛝":"playground slide","🛞":"wheel","🛟":"ring buoy","🛠":"hammer and wrench","🛡":"shield","🛢":"oil drum","🛣":"motorway","🛤":"railway track","🛥":"motor boat","🛦":"up-pointing military airplane","🛧":"up-pointing airplane","🛨":"up-pointing small airplane","🛩":"small airplane","🛪":"northeast-pointing airplane","🛫":"airplane departure","🛬":"airplane arriving","🛰":"satellite","🛱":"oncoming fire engine","🛲":"diesel locomotive","🛳":"passenger ship","🛴":"scooter","🛵":"motor scooter","🛶":"canoe","🛷":"sled","🛸":"flying saucer","🛹":"skateboard","🛺":"auto rickshaw","🛻":"pickup truck","🛼":"roller skate","🝴":"lot of fortune","🝵":"occultation","🝶":"lunar eclipse","🝻":"haumea","🝼":"makemake","🝽":"gonggong","🝾":"quaoar","🝿":"orcus","🟕":"circled triangle","🟖":"negative circled triangle","🟗":"circled square","🟘":"negative circled square","🟙":"nine pointed white star","🟠":"large orange circle","🟡":"large yellow circle","🟢":"large green circle","🟣":"large purple circle","🟤":"large brown circle","🟥":"large red square","🟦":"large blue square","🟧":"large orange square","🟨":"large yellow square","🟩":"large green square","🟪":"large purple square","🟫":"large brown square","🟰":"heavy equals sign","🢰":"arrow pointing upwards then north west","🢱":"arrow pointing rightwards then curving south west","🤌":"pinched fingers","🤍":"white heart","🤎":"brown heart","🤏":"pinching hand","🤐":"zipper-mouth face","🤑":"money-mouth face","🤒":"face with thermometer","🤓":"nerd face","🤔":"thinking face","🤕":"face with head-bandage","🤖":"robot face","🤗":"hugging face","🤘":"sign of the horns","🤙":"call me hand","🤚":"raised back of hand","🤛":"left-facing fist","🤜":"right-facing fist","🤝":"handshake","🤞":"hand with index and middle fingers crossed","🤟":"i love you hand sign","🤠":"face with cowboy hat","🤡":"clown face","🤢":"nauseated face","🤣":"rolling on the floor laughing","🤤":"drooling face","🤥":"lying face","🤦":"face palm","🤧":"sneezing face","🤨":"face with one eyebrow raised","🤩":"grinning face with star eyes","🤪":"grinning face with one large and one small eye","🤫":"face with finger covering closed lips","🤬":"serious face with symbols covering mouth","🤭":"smiling face with smiling eyes and hand covering mouth","🤮":"face with open mouth vomiting","🤯":"shocked face with exploding head","🤰":"pregnant woman","🤱":"breast-feeding","🤲":"palms up together","🤳":"selfie","🤴":"prince","🤵":"man in tuxedo","🤶":"mother christmas","🤷":"shrug","🤸":"person doing cartwheel","🤹":"juggling","🤺":"fencer","🤼":"wrestlers","🤽":"water polo","🤾":"handball","🤿":"diving mask","🥀":"wilted flower","🥁":"drum with drumsticks","🥂":"clinking glasses","🥃":"tumbler glass","🥄":"spoon","🥅":"goal net","🥇":"first place medal","🥈":"second place medal","🥉":"third place medal","🥊":"boxing glove","🥋":"martial arts uniform","🥌":"curling stone","🥍":"lacrosse stick and ball","🥎":"softball","🥏":"flying disc","🥐":"croissant","🥑":"avocado","🥒":"cucumber","🥓":"bacon","🥔":"potato","🥕":"carrot","🥖":"baguette bread","🥗":"green salad","🥘":"shallow pan of food","🥙":"stuffed flatbread","🥚":"egg","🥛":"glass of milk","🥜":"peanuts","🥝":"kiwifruit","🥞":"pancakes","🥟":"dumpling","🥠":"fortune cookie","🥡":"takeout box","🥢":"chopsticks","🥣":"bowl with spoon","🥤":"cup with straw","🥥":"coconut","🥦":"broccoli","🥧":"pie","🥨":"pretzel","🥩":"cut of meat","🥪":"sandwich","🥫":"canned food","🥬":"leafy green","🥭":"mango","🥮":"moon cake","🥯":"bagel","🥰":"smiling face with smiling eyes and three hearts","🥱":"yawning face","🥲":"smiling face with tear","🥳":"face with party horn and party hat","🥴":"face with uneven eyes and wavy mouth","🥵":"overheated face","🥶":"freezing face","🥷":"ninja","🥸":"disguised face","🥹":"face holding back tears","🥺":"face with pleading eyes","🥻":"sari","🥼":"lab coat","🥽":"goggles","🥾":"hiking boot","🥿":"flat shoe","🦀":"crab","🦁":"lion face","🦂":"scorpion","🦃":"turkey","🦄":"unicorn face","🦅":"eagle","🦆":"duck","🦇":"bat","🦈":"shark","🦉":"owl","🦊":"fox face","🦋":"butterfly","🦌":"deer","🦍":"gorilla","🦎":"lizard","🦏":"rhinoceros","🦐":"shrimp","🦑":"squid","🦒":"giraffe face","🦓":"zebra face","🦔":"hedgehog","🦕":"sauropod","🦖":"t-rex","🦗":"cricket","🦘":"kangaroo","🦙":"llama","🦚":"peacock","🦛":"hippopotamus","🦜":"parrot","🦝":"raccoon","🦞":"lobster","🦟":"mosquito","🦠":"microbe","🦡":"badger","🦢":"swan","🦣":"mammoth","🦤":"dodo","🦥":"sloth","🦦":"otter","🦧":"orangutan","🦨":"skunk","🦩":"flamingo","🦪":"oyster","🦫":"beaver","🦬":"bison","🦭":"seal","🦮":"guide dog","🦯":"probing cane","🦰":"emoji component red hair","🦱":"emoji component curly hair","🦲":"emoji component bald","🦳":"emoji component white hair","🦴":"bone","🦵":"leg","🦶":"foot","🦷":"tooth","🦸":"superhero","🦹":"supervillain","🦺":"safety vest","🦻":"ear with hearing aid","🦼":"motorized wheelchair","🦽":"manual wheelchair","🦾":"mechanical arm","🦿":"mechanical leg","🧀":"cheese wedge","🧁":"cupcake","🧂":"salt shaker","🧃":"beverage box","🧄":"garlic","🧅":"onion","🧆":"falafel","🧇":"waffle","🧈":"butter","🧉":"mate drink","🧊":"ice cube","🧋":"bubble tea","🧌":"troll","🧍":"standing person","🧎":"kneeling person","🧏":"deaf person","🧐":"face with monocle","🧑":"adult","🧒":"child","🧓":"older adult","🧔":"bearded person","🧕":"person with headscarf","🧖":"person in steamy room","🧗":"person climbing","🧘":"person in lotus position","🧙":"mage","🧚":"fairy","🧛":"vampire","🧜":"merperson","🧝":"elf","🧞":"genie","🧟":"zombie","🧠":"brain","🧡":"orange heart","🧢":"billed cap","🧣":"scarf","🧤":"gloves","🧥":"coat","🧦":"socks","🧧":"red gift envelope","🧨":"firecracker","🧩":"jigsaw puzzle piece","🧪":"test tube","🧫":"petri dish","🧬":"dna double helix","🧭":"compass","🧮":"abacus","🧯":"fire extinguisher","🧰":"toolbox","🧱":"brick","🧲":"magnet","🧳":"luggage","🧴":"lotion bottle","🧵":"spool of thread","🧶":"ball of yarn","🧷":"safety pin","🧸":"teddy bear","🧹":"broom","🧺":"basket","🧻":"roll of paper","🧼":"bar of soap","🧽":"sponge","🧾":"receipt","🧿":"nazar amulet","🨀":"neutral chess king","🨁":"neutral chess queen","🨂":"neutral chess rook","🨃":"neutral chess bishop","🨄":"neutral chess knight","🨅":"neutral chess pawn","🨆":"white chess knight rotated forty-five degrees","🨇":"black chess knight rotated forty-five degrees","🨈":"neutral chess knight rotated forty-five degrees","🨉":"white chess king rotated ninety degrees","🨊":"white chess queen rotated ninety degrees","🨋":"white chess rook rotated ninety degrees","🨌":"white chess bishop rotated ninety degrees","🨍":"white chess knight rotated ninety degrees","🨎":"white chess pawn rotated ninety degrees","🨏":"black chess king rotated ninety degrees","🨐":"black chess queen rotated ninety degrees","🨑":"black chess rook rotated ninety degrees","🨒":"black chess bishop rotated ninety degrees","🨓":"black chess knight rotated ninety degrees","🨔":"black chess pawn rotated ninety degrees","🨕":"neutral chess king rotated ninety degrees","🨖":"neutral chess queen rotated ninety degrees","🨗":"neutral chess rook rotated ninety degrees","🨘":"neutral chess bishop rotated ninety degrees","🨙":"neutral chess knight rotated ninety degrees","🨚":"neutral chess pawn rotated ninety degrees","🨛":"white chess knight rotated one hundred thirty-five degrees","🨜":"black chess knight rotated one hundred thirty-five degrees","🨝":"neutral chess knight rotated one hundred thirty-five degrees","🨞":"white chess turned king","🨟":"white chess turned queen","🨠":"white chess turned rook","🨡":"white chess turned bishop","🨢":"white chess turned knight","🨣":"white chess turned pawn","🨤":"black chess turned king","🨥":"black chess turned queen","🨦":"black chess turned rook","🨧":"black chess turned bishop","🨨":"black chess turned knight","🨩":"black chess turned pawn","🨪":"neutral chess turned king","🨫":"neutral chess turned queen","🨬":"neutral chess turned rook","🨭":"neutral chess turned bishop","🨮":"neutral chess turned knight","🨯":"neutral chess turned pawn","🨰":"white chess knight rotated two hundred twenty-five degrees","🨱":"black chess knight rotated two hundred twenty-five degrees","🨲":"neutral chess knight rotated two hundred twenty-five degrees","🨳":"white chess king rotated two hundred seventy degrees","🨴":"white chess queen rotated two hundred seventy degrees","🨵":"white chess rook rotated two hundred seventy degrees","🨶":"white chess bishop rotated two hundred seventy degrees","🨷":"white chess knight rotated two hundred seventy degrees","🨸":"white chess pawn rotated two hundred seventy degrees","🨹":"black chess king rotated two hundred seventy degrees","🨺":"black chess queen rotated two hundred seventy degrees","🨻":"black chess rook rotated two hundred seventy degrees","🨼":"black chess bishop rotated two hundred seventy degrees","🨽":"black chess knight rotated two hundred seventy degrees","🨾":"black chess pawn rotated two hundred seventy degrees","🨿":"neutral chess king rotated two hundred seventy degrees","🩀":"neutral chess queen rotated two hundred seventy degrees","🩁":"neutral chess rook rotated two hundred seventy degrees","🩂":"neutral chess bishop rotated two hundred seventy degrees","🩃":"neutral chess knight rotated two hundred seventy degrees","🩄":"neutral chess pawn rotated two hundred seventy degrees","🩅":"white chess knight rotated three hundred fifteen degrees","🩆":"black chess knight rotated three hundred fifteen degrees","🩇":"neutral chess knight rotated three hundred fifteen degrees","🩈":"white chess equihopper","🩉":"black chess equihopper","🩊":"neutral chess equihopper","🩋":"white chess equihopper rotated ninety degrees","🩌":"black chess equihopper rotated ninety degrees","🩍":"neutral chess equihopper rotated ninety degrees","🩎":"white chess knight-queen","🩏":"white chess knight-rook","🩐":"white chess knight-bishop","🩑":"black chess knight-queen","🩒":"black chess knight-rook","🩓":"black chess knight-bishop","🩠":"xiangqi red general","🩡":"xiangqi red mandarin","🩢":"xiangqi red elephant","🩣":"xiangqi red horse","🩤":"xiangqi red chariot","🩥":"xiangqi red cannon","🩦":"xiangqi red soldier","🩧":"xiangqi black general","🩨":"xiangqi black mandarin","🩩":"xiangqi black elephant","🩪":"xiangqi black horse","🩫":"xiangqi black chariot","🩬":"xiangqi black cannon","🩭":"xiangqi black soldier","🩰":"ballet shoes","🩱":"one-piece swimsuit","🩲":"briefs","🩳":"shorts","🩴":"thong sandal","🩵":"light blue heart","🩶":"grey heart","🩷":"pink heart","🩸":"drop of blood","🩹":"adhesive bandage","🩺":"stethoscope","🩻":"x-ray","🩼":"crutch","🪀":"yo-yo","🪁":"kite","🪂":"parachute","🪃":"boomerang","🪄":"magic wand","🪅":"pinata","🪆":"nesting dolls","🪇":"maracas","🪈":"flute","🪐":"ringed planet","🪑":"chair","🪒":"razor","🪓":"axe","🪔":"diya lamp","🪕":"banjo","🪖":"military helmet","🪗":"accordion","🪘":"long drum","🪙":"coin","🪚":"carpentry saw","🪛":"screwdriver","🪜":"ladder","🪝":"hook","🪞":"mirror","🪟":"window","🪠":"plunger","🪡":"sewing needle","🪢":"knot","🪣":"bucket","🪤":"mouse trap","🪥":"toothbrush","🪦":"headstone","🪧":"placard","🪨":"rock","🪩":"mirror ball","🪪":"identification card","🪫":"low battery","🪬":"hamsa","🪭":"folding hand fan","🪮":"hair pick","🪯":"khanda","🪰":"fly","🪱":"worm","🪲":"beetle","🪳":"cockroach","🪴":"potted plant","🪵":"wood","🪶":"feather","🪷":"lotus","🪸":"coral","🪹":"empty nest","🪺":"nest with eggs","🪻":"hyacinth","🪼":"jellyfish","🪽":"wing","🪿":"goose","🫀":"anatomical heart","🫁":"lungs","🫂":"people hugging","🫃":"pregnant man","🫄":"pregnant person","🫅":"person with crown","🫎":"moose","🫏":"donkey","🫐":"blueberries","🫑":"bell pepper","🫒":"olive","🫓":"flatbread","🫔":"tamale","🫕":"fondue","🫖":"teapot","🫗":"pouring liquid","🫘":"beans","🫙":"jar","🫚":"ginger root","🫛":"pea pod","🫠":"melting face","🫡":"saluting face","🫢":"face with open eyes and hand over mouth","🫣":"face with peeking eye","🫤":"face with diagonal mouth","🫥":"dotted line face","🫦":"biting lip","🫧":"bubbles","🫨":"shaking face","🫰":"hand with index finger and thumb crossed","🫱":"rightwards hand","🫲":"leftwards hand","🫳":"palm down hand","🫴":"palm up hand","🫵":"index pointing at the viewer","🫶":"heart hands","🫷":"leftwards pushing hand","🫸":"rightwards pushing hand"};
+
+/* слова, которые автор задал сам; [ь] означает мягкий знак */
+const EMOJI_WORDS = [
+  ['😀😃😄😁😆🙂🙃😊☺️😏', 'Yi?bka'],
+  ['😅😂🤣', 'ct*ex'],
+  ['😭🥲🥹😓😥😢☹️🙁🫤😕😰😨😧😦😖😣😩😫', 'fpycm[ь]'],
+  ['😉🤩😌🙂‍↔️🙂‍↕️🤤🥺😶😶‍🌫️🫥🫡🤐🤯🫨🥴🫩😪🤧🤒🤕😷🤥😇🤠🤑🤓😎🥸🤡', 'ilčo'],
+  ['😗😙😚😘🥰😍😋😛😝😜🤪', 'i!bo;[ь]'],
+  ['🫪😱🤨🧐😳', 'Ydl;ieHle'],
+  ['😑😐😒🙄😮‍💨😤😠😡🤬👹👺😈👿', 'fHe;'],
+  ['🤫🫢🤭🥱', 'mlxo'],
+  ['😵😵‍💫💀☠️', '*epm[ь]'],
+  ['🌚🌜🌝🌛🌞💫✨⭐🌟', 'ż;eżda'],
+  ['💅🤝🙏👈🤳☝️✍️👆🖕👇👉🤞🫵🫰👌🤙🤏🤌✌️🤘👋🤟🤚🖖🖐️✋✊👊🫳🫴👏🫱🫲🫷🫸🤛🤜🤲👐🙌🫶👎👍🦾💪', 'pyka'],
+  ['👂🦻🦶🦵🦿👃👅', '_acm[ь].Ŧeia'],
+  ['🙇‍♂️🙍‍♂️🙋‍♂️🤦‍♂️💁‍♂️🤷‍♂️🙆‍♂️🙅‍♂️🙎‍♂️🧏‍♂️💆‍♂️💇‍♂️🧖‍♂️🛀🛌🧘‍♂️🧍‍♂️🤸‍♂️🧎‍♂️👨‍🦼👨‍🦽👨‍🦯🚶‍♂️🏃‍♂️⛹️‍♂️🤾‍♂️🚴‍♂️🚵‍♂️🧗‍♂️🏋️‍♂️🤼🤼‍♂️🤼‍♀️🤹‍♂️🏌️‍♂️🏇🤺⛷️🏂🪂🏄‍♂️🚣‍♂️🏊‍♂️🤽‍♂️🧜‍♂️🧚‍♂️🧞‍♂️🧝‍♂️🧙‍♂️🧛‍♂️🧟‍♂️🧌🫈🦸‍♂️🦹‍♂️🎅🥷💂‍♂️🤴🤵‍♂️👰‍♂️👨‍🚀👷‍♂️👮‍♂️🕵️‍♂️👨‍✈️👨‍🔬👨‍⚕️👨‍🔧👨‍🏭👨‍🚒👨‍🌾👨‍🏫👨‍🍳👨‍🎓👨‍🎨👨‍💼👨‍🎤👨‍⚖️👨‍💻👳‍♂️👴🧕👨👲👦👼👶👨‍🦳🧑‍🩰👨‍🦰🕴️👱‍♂️🧔‍♂️👨‍🦱👨‍🦲💃🕺🧑‍🤝‍🧑👭👬🫃🤱👨‍🍼', '_eio;ek'],
+  ['👯👬👯‍♂️👭🧑‍🤝‍🧑👯‍♀️👫💏👩‍❤️‍💋‍👨👨‍❤️‍💋‍👨👩‍❤️‍💋‍👩💑👩‍❤️‍👨👨‍❤️‍👨👩‍❤️‍👩', 'i!dl']
+];
+const LITERAL = {};
+for (const [list, word] of EMOJI_WORDS) for (const e of list.match(EMOJI_RE) || []) LITERAL[norm(e)] = word;
+
+/* русские названия остальных смайлов; несколько смайлов на строке делят одно название */
+const RU_NAMES = `
+😴💤 сон
+🤔 раздумье
+🥳 праздник
+🤗🫂 объятия
+😬 гримаса
+🫠 таяние
+😮😯😲 изумление
+😔😞😟 печаль
+🥵 жара
+🥶 холод
+🤢🤮 тошнота
+🫣 подглядывание
+🙈🙉🙊🐵🐒 обезьяна
+👻 привидение
+👽👾 пришелец
+🤖 робот
+💩 кучка
+😺😸😹😻😼😽🙀😿😾 кот
+💋 поцелуй
+💌 письмо
+❤🧡💛💚💙💜🖤🤍🤎❣💕💞💓💗💖💝💘💟🫀 сердце
+💔 разбитое сердце
+💯 сто
+💢 злость
+💥 взрыв
+💦💧 капля
+💨🌬 ветер
+🕳 дыра
+💬🗯💭 облачко
+👀 глаза
+👁 глаз
+🧠 мозг
+🫁 лёгкие
+🦷 зуб
+🦴 кость
+👤👥 силуэт
+👣🐾 следы
+🦍🦧 горилла
+🐶🐕🦮🐩 собака
+🐺 волк
+🦊 лиса
+🦝 енот
+🐱🐈 кошка
+🦁 лев
+🐯🐅 тигр
+🐆 леопард
+🐴🐎 лошадь
+🦄 единорог
+🦓 зебра
+🦌 олень
+🐮🐂🐄 корова
+🐃 буйвол
+🐷🐖🐽 свинья
+🐗 кабан
+🐏🐑 овца
+🐐 коза
+🐪🐫 верблюд
+🦙 лама
+🦒 жираф
+🐘 слон
+🦏 носорог
+🦛 бегемот
+🐭🐁🐀 мышь
+🐹 хомяк
+🐰🐇 кролик
+🐿 белка
+🦔 ёж
+🦇 летучая мышь
+🐻 медведь
+🐨 коала
+🐼 панда
+🦥 ленивец
+🦦 выдра
+🦨 скунс
+🦘 кенгуру
+🦡 барсук
+🦃 индюк
+🐔🐓 курица
+🐣🐤🐥 цыплёнок
+🐦 птица
+🐧 пингвин
+🕊 голубь
+🦅 орёл
+🦆 утка
+🦢 лебедь
+🦉 сова
+🦩 фламинго
+🦚 павлин
+🦜 попугай
+🐸 лягушка
+🐊 крокодил
+🐢 черепаха
+🦎 ящерица
+🐍 змея
+🐲🐉 дракон
+🦕🦖 динозавр
+🐳🐋 кит
+🐬 дельфин
+🐟🐠🐡 рыба
+🦈 акула
+🐙 осьминог
+🐚 ракушка
+🐌 улитка
+🦋 бабочка
+🐛 гусеница
+🐜 муравей
+🐝 пчела
+🐞 божья коровка
+🦗 кузнечик
+🕷 паук
+🕸 паутина
+🦂 скорпион
+🦟 комар
+🪰 муха
+🦠 микроб
+💐 букет
+🌸🌺🌼🌷💮 цветок
+🌹🥀 роза
+🌻 подсолнух
+🌱🌿☘ росток
+🍀 клевер
+🌲🌳 дерево
+🌴 пальма
+🌵 кактус
+🌾 колос
+🍁🍂🍃 лист
+🍄 гриб
+🪴 растение
+🍇 виноград
+🍈 дыня
+🍉 арбуз
+🍊 апельсин
+🍋 лимон
+🍌 банан
+🍍 ананас
+🥭 манго
+🍎🍏 яблоко
+🍐 груша
+🍑 персик
+🍒 вишня
+🍓 клубника
+🫐 черника
+🥝 киви
+🍅 помидор
+🥥 кокос
+🥑 авокадо
+🍆 баклажан
+🥔 картофель
+🥕 морковь
+🌽 кукуруза
+🌶 перец
+🥒 огурец
+🥦 брокколи
+🧄 чеснок
+🧅 лук
+🥜 арахис
+🌰 каштан
+🍞 хлеб
+🥐 круассан
+🥖 багет
+🥨 крендель
+🥞 блины
+🧀 сыр
+🍖🍗 мясо
+🥩 стейк
+🥓 бекон
+🍔 бургер
+🍟 картошка
+🍕 пицца
+🌭 хотдог
+🥪 сэндвич
+🌮 тако
+🌯 шаурма
+🥚 яйцо
+🍳 яичница
+🍲 суп
+🥣 каша
+🥗 салат
+🍿 попкорн
+🧈 масло
+🧂 соль
+🍱 бенто
+🍙🍚 рис
+🍜 лапша
+🍝 макароны
+🍣 суши
+🍤🦐 креветка
+🦀 краб
+🦞 омар
+🦑 кальмар
+🍦🍧🍨 мороженое
+🍩 пончик
+🍪 печенье
+🎂🍰🧁 торт
+🍫 шоколад
+🍬🍭 конфета
+🍮 пудинг
+🍯 мёд
+🍼 бутылочка
+🥛 молоко
+☕ кофе
+🍵 чай
+🍶 саке
+🍾 шампанское
+🍷 вино
+🍸🍹 коктейль
+🍺🍻 пиво
+🥂 бокалы
+🥃 виски
+🥤 напиток
+🧊 лёд
+🍽🍴 вилка
+🥄 ложка
+🔪 нож
+🌍🌎🌏🌐 земля
+🌋 вулкан
+🗻🏔⛰ гора
+⛺🏕 палатка
+🏖🏝 пляж
+🏜 пустыня
+🌑🌒🌓🌔🌕🌖🌗🌘🌙 луна
+☀🌤 солнце
+🪐 планета
+🌠 падающая звезда
+🌌 млечный путь
+☁🌥⛅ облако
+🌦🌧☔ дождь
+⛈🌩 гроза
+🌨❄ снег
+☃⛄ снеговик
+🌪 торнадо
+🌫 туман
+🌀 вихрь
+🌈 радуга
+☂🌂 зонт
+⚡ молния
+☄ комета
+🔥 огонь
+🌊 волна
+🏠🏡 дом
+🏢🏬 здание
+🏥 больница
+🏫 школа
+🏰🏯 замок
+⛪🕌🛕🕍 храм
+🗼 башня
+🗽 статуя
+⛲ фонтан
+🌉 мост
+🎡🎢🎠 карусель
+🎪 цирк
+🚂🚆🚄🚅🚃 поезд
+🚇🚊 метро
+🚌🚍 автобус
+🚑 скорая
+🚒 пожарная
+🚓🚔 полиция
+🚕🚖 такси
+🚗🚘 машина
+🚙🛻 джип
+🚚🚛 грузовик
+🚜 трактор
+🏎 гоночная машина
+🏍 мотоцикл
+🛵 скутер
+🚲 велосипед
+🛴 самокат
+🛹 скейт
+⛽ заправка
+🚨 мигалка
+🚦🚥 светофор
+🚧 ремонт
+⚓ якорь
+⛵🛶 лодка
+🚤 катер
+🚢🛳⛴ корабль
+✈🛩🛫🛬 самолёт
+🚁 вертолёт
+🚀 ракета
+🛸 тарелка
+🛰 спутник
+🧳 чемодан
+⌛⏳ песочные часы
+⌚🕰 часы
+⏰ будильник
+⏱⏲ секундомер
+🎃 тыква
+🎄 ёлка
+🎆🎇 салют
+🎈 шарик
+🎉🎊 хлопушка
+🎀 бант
+🎁 подарок
+🏆 кубок
+🏅🎖 медаль
+🥇 золото
+🥈 серебро
+🥉 бронза
+⚽ футбол
+🏀 баскетбол
+🏐 волейбол
+🏈🏉 регби
+⚾🥎 бейсбол
+🎾 теннис
+🎳 боулинг
+🏓 пинг понг
+🏸 бадминтон
+🥊🥋 бокс
+⛳ гольф
+🎣 рыбалка
+🎿⛷ лыжи
+🛷 санки
+🎯 мишень
+🎱 бильярд
+🔮 шар
+🎮 игра
+🕹 джойстик
+🎰 автомат
+🎲 кубик
+🧩 пазл
+🧸 мишка
+🃏 джокер
+🎭 маски
+🎨 палитра
+👓🕶 очки
+👔👕 рубашка
+👖 джинсы
+🧣 шарф
+🧤 перчатки
+🧥 куртка
+🧦 носки
+👗👘 платье
+👙 купальник
+👜👛 сумка
+🎒 рюкзак
+👞👟 обувь
+👠👡 туфли
+👢 сапоги
+👑 корона
+👒🎩🧢 шляпа
+🎓 шапочка
+💄 помада
+💍 кольцо
+💎 алмаз
+🔇🔈🔉🔊 звук
+📢📣 громкоговоритель
+🔔🔕 колокольчик
+🎵🎶🎼 музыка
+🎤🎙 микрофон
+🎧 наушники
+📻 радио
+🎷 саксофон
+🎸 гитара
+🎹 пианино
+🎺 труба
+🎻 скрипка
+🥁 барабан
+📱📲 телефон
+☎📞 трубка
+🔋 батарея
+🔌 розетка
+💻 ноутбук
+🖥 компьютер
+🖨 принтер
+⌨ клавиатура
+🖱 мышка
+💽💾💿📀 диск
+🎥🎬📽 кино
+📺 телевизор
+📷📸📹 камера
+🔍🔎 лупа
+💡 лампочка
+🔦 фонарик
+📔📕📖📗📘📙📚📓📒 книга
+📃📜📄📰📑 бумага
+🔖🏷 закладка
+💰 деньги
+🪙 монета
+💴💵💶💷💸 купюры
+💳 карта
+✉📧📨📩📤📥 письмо
+📦📫📪📬📭📮 посылка
+✏✒🖋🖊 ручка
+🖌🖍 кисть
+📝 записка
+💼 портфель
+📁📂🗂 папка
+📅📆🗓 календарь
+📈📉📊 график
+📋 список
+📌📍 булавка
+📎🖇 скрепка
+📏📐 линейка
+✂ ножницы
+🔒🔓🔏🔐 замок
+🔑🗝 ключ
+🔨🛠⚒ молоток
+🪓 топор
+⛏ кирка
+🗡⚔ меч
+💣 бомба
+🏹 стрела
+🛡 щит
+🔧 гаечный ключ
+⚙ шестерня
+⚖ весы
+🔗⛓ цепь
+🧰 ящик
+🧲 магнит
+⚗🧪 колба
+🧬 днк
+🔬 микроскоп
+🔭 телескоп
+📡 антенна
+💉 шприц
+💊 таблетка
+🩹 пластырь
+🩺 стетоскоп
+🚪 дверь
+🛏 кровать
+🛋 диван
+🪑 стул
+🚽 унитаз
+🚿🛁 ванна
+🧴 флакон
+🧹 метла
+🧺 корзина
+🧻 туалетная бумага
+🧼 мыло
+🪥 щётка
+🧽 губка
+🧯 огнетушитель
+🛒 тележка
+🚬 сигарета
+⚰ гроб
+🗿 статуя
+⚠ внимание
+⛔🚫 запрет
+🔞 восемнадцать
+☢☣ опасность
+⬆↗➡↘⬇↙⬅↖↕↔ стрелка
+🔄🔃🔁🔂🔀 повтор
+▶⏩⏭⏯ воспроизведение
+◀⏪⏮ назад
+⏸ пауза
+⏹ стоп
+⏺ запись
+♀ женщина
+♂ мужчина
+✖ умножение
+➕ плюс
+➖ минус
+➗ деление
+♾ бесконечность
+❓❔ вопрос
+❕❗‼⁉ восклицание
+♻ переработка
+✅☑✔ галочка
+❌❎ крестик
+⭕ круг
+🔴🟠🟡🟢🔵🟣🟤⚫⚪ кружок
+🟥🟧🟨🟩🟦🟪🟫⬛⬜◼◻◾◽▪▫ квадрат
+🔶🔷🔸🔹🔺🔻💠 ромб
+🏁 финиш
+🚩 флажок
+🎌 флаги
+🏴🏳 флаг
+🏳️‍🌈 радужный флаг
+🏴‍☠️ пиратский флаг
+`;
+const RU = {};
+for (const line of RU_NAMES.trim().split('\n')) {
+  const sp = line.indexOf(' ');
+  const name = line.slice(sp + 1).trim();
+  for (const e of line.slice(0, sp).match(EMOJI_RE) || []) RU[norm(e)] = name;
+}
+
+const COUNTRY_NAMES = `
+AC Остров Вознесения
+AD Андорра
+AE Объединённые Арабские Эмираты
+AF Афганистан
+AG Антигуа и Барбуда
+AI Ангилья
+AL Албания
+AM Армения
+AO Ангола
+AQ Антарктида
+AR Аргентина
+AS Американское Самоа
+AT Австрия
+AU Австралия
+AW Аруба
+AX Аландские острова
+AZ Азербайджан
+BA Босния и Герцеговина
+BB Барбадос
+BD Бангладеш
+BE Бельгия
+BF Буркина Фасо
+BG Болгария
+BH Бахрейн
+BI Бурунди
+BJ Бенин
+BL Сен Бартелеми
+BM Бермудские острова
+BN Бруней
+BO Боливия
+BQ Бонэйр
+BR Бразилия
+BS Багамы
+BT Бутан
+BV Остров Буве
+BW Ботсвана
+BY Беларусь
+BZ Белиз
+CA Канада
+CC Кокосовые острова
+CD Конго Киншаса
+CF Центральноафриканская Республика
+CG Конго Браззавиль
+CH Швейцария
+CI Кот д Ивуар
+CK Острова Кука
+CL Чили
+CM Камерун
+CN Китай
+CO Колумбия
+CP Остров Клиппертон
+CR Коста Рика
+CU Куба
+CV Кабо Верде
+CW Кюрасао
+CX Остров Рождества
+CY Кипр
+CZ Чехия
+DE Германия
+DG Диего Гарсия
+DJ Джибути
+DK Дания
+DM Доминика
+DO Доминиканская Республика
+DZ Алжир
+EA Сеута и Мелилья
+EC Эквадор
+EE Эстония
+EG Египет
+EH Западная Сахара
+ER Эритрея
+ES Испания
+ET Эфиопия
+EU Европейский союз
+FI Финляндия
+FJ Фиджи
+FK Фолклендские острова
+FM Микронезия
+FO Фарерские острова
+FR Франция
+GA Габон
+GB Великобритания
+GD Гренада
+GE Грузия
+GF Французская Гвиана
+GG Гернси
+GH Гана
+GI Гибралтар
+GL Гренландия
+GM Гамбия
+GN Гвинея
+GP Гваделупа
+GQ Экваториальная Гвинея
+GR Греция
+GS Южная Георгия и Южные Сандвичевы острова
+GT Гватемала
+GU Гуам
+GW Гвинея Бисау
+GY Гайана
+HK Гонконг
+HM Остров Херд и острова Макдональд
+HN Гондурас
+HR Хорватия
+HT Гаити
+HU Венгрия
+IC Канарские острова
+ID Индонезия
+IE Ирландия
+IL Израиль
+IM Остров Мэн
+IN Индия
+IO Британская территория в Индийском океане
+IQ Ирак
+IR Иран
+IS Исландия
+IT Италия
+JE Джерси
+JM Ямайка
+JO Иордания
+JP Япония
+KE Кения
+KG Киргизия
+KH Камбоджа
+KI Кирибати
+KM Коморы
+KN Сент Китс и Невис
+KP Северная Корея
+KR Южная Корея
+KW Кувейт
+KY Острова Кайман
+KZ Казахстан
+LA Лаос
+LB Ливан
+LC Сент Люсия
+LI Лихтенштейн
+LK Шри Ланка
+LR Либерия
+LS Лесото
+LT Литва
+LU Люксембург
+LV Латвия
+LY Ливия
+MA Марокко
+MC Монако
+MD Молдова
+ME Черногория
+MF Сен Мартен
+MG Мадагаскар
+MH Маршалловы острова
+MK Северная Македония
+ML Мали
+MM Мьянма
+MN Монголия
+MO Макао
+MP Северные Марианские острова
+MQ Мартиника
+MR Мавритания
+MS Монтсеррат
+MT Мальта
+MU Маврикий
+MV Мальдивы
+MW Малави
+MX Мексика
+MY Малайзия
+MZ Мозамбик
+NA Намибия
+NC Новая Каледония
+NE Нигер
+NF Остров Норфолк
+NG Нигерия
+NI Никарагуа
+NL Нидерланды
+NO Норвегия
+NP Непал
+NR Науру
+NU Ниуэ
+NZ Новая Зеландия
+OM Оман
+PA Панама
+PE Перу
+PF Французская Полинезия
+PG Папуа Новая Гвинея
+PH Филиппины
+PK Пакистан
+PL Польша
+PM Сен Пьер и Микелон
+PN Острова Питкэрн
+PR Пуэрто Рико
+PS Палестина
+PT Португалия
+PW Палау
+PY Парагвай
+QA Катар
+RE Реюньон
+RO Румыния
+RS Сербия
+RU Россия
+RW Руанда
+SA Саудовская Аравия
+SB Соломоновы острова
+SC Сейшелы
+SD Судан
+SE Швеция
+SG Сингапур
+SH Остров Святой Елены
+SI Словения
+SJ Шпицберген и Ян Майен
+SK Словакия
+SL Сьерра Леоне
+SM Сан Марино
+SN Сенегал
+SO Сомали
+SR Суринам
+SS Южный Судан
+ST Сан Томе и Принсипи
+SV Сальвадор
+SX Синт Мартен
+SY Сирия
+SZ Эсватини
+TA Тристан да Кунья
+TC Острова Тёркс и Кайкос
+TD Чад
+TF Французские Южные территории
+TG Того
+TH Таиланд
+TJ Таджикистан
+TK Токелау
+TL Восточный Тимор
+TM Туркменистан
+TN Тунис
+TO Тонга
+TR Турция
+TT Тринидад и Тобаго
+TV Тувалу
+TW Тайвань
+TZ Танзания
+UA Украина
+UG Уганда
+UM Внешние малые острова США
+UN Организация Объединённых Наций
+US Соединённые Штаты Америки
+UY Уругвай
+UZ Узбекистан
+VA Ватикан
+VC Сент Винсент и Гренадины
+VE Венесуэла
+VG Британские Виргинские острова
+VI Американские Виргинские острова
+VN Вьетнам
+VU Вануату
+WF Уоллис и Футуна
+WS Самоа
+XK Косово
+YE Йемен
+YT Майотта
+ZA Южная Африка
+ZM Замбия
+ZW Зимбабве
+`;
+const COUNTRIES = {};
+for (const line of COUNTRY_NAMES.trim().split('\n')) COUNTRIES[line.slice(0, 2)] = line.slice(3);
+const FLAGS = new Set(Object.keys(COUNTRIES));
+const flagOf = (code) => [...code].map((c) => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
+
+function lookupEmoji(tok) {
+  const cps = [...tok];
+  if (cps.length === 2 && cps.every((c) => /\p{Regional_Indicator}/u.test(c))) {
+    const code = cps.map((c) => String.fromCharCode(65 + c.codePointAt(0) - 0x1F1E6)).join('');
+    return COUNTRIES[code] ? { name: COUNTRIES[code] } : null;
+  }
+  const full = norm(tok);
+  if (LITERAL[full]) return { lit: LITERAL[full] };
+  const k = full.replace(/[\u{1F3FB}-\u{1F3FF}]/gu, '');
+  for (const t of [k, k.replace(/♀/g, '♂'), k.replace(/‍[♀♂]/g, '')]) {
+    if (LITERAL[t]) return { lit: LITERAL[t] };
+  }
+  const base = [...k][0];
+  if (LITERAL[base]) return { lit: LITERAL[base] };
+  if (RU[k]) return { name: RU[k] };
+  if (RU[base]) return { name: RU[base] };
+  if (EMOJI_EN[base]) return { name: EMOJI_EN[base] };
+  return null;
+}
+function cleanName(s) {
+  return s.replace(/-/g, ' ').replace(/[^A-Za-zА-Яа-яЁё ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function translateParagraph(par, state) {
+  const lead = par.search(/\S/);
+  if (lead < 0) return par.replace(/[^\S\r\n]/g, '.');
+  const end = par.trimEnd().length - 1;
+  const items = [];
+  const starts = [];
+  let wordId = 0;
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+  const pushLit = (str, atStart) => {
+    if (!atStart) { const c = [...str]; c[0] = c[0].toLowerCase(); str = c.join(''); }
+    const parts = str.split('[ь]');
+    parts.forEach((seg, i) => {
+      for (const ch of seg) items.push({ s: ch, w: -1 });
+      if (i < parts.length - 1) items.push({ s: ')', w: -1, soft: true });
+    });
+  };
+  const symbol = (ch) => {
+    if (FORMAT_SKIP.test(ch)) return;
+    let out;
+    if (/[^\S\r\n]/.test(ch)) out = '.';
+    else if (has(SYMBOLS, ch)) out = SYMBOLS[ch];
+    else out = '>';
+    if (out === ERASE) { if (starts.length) items.length = starts.pop(); }
+    else if (out !== SKIP) { starts.push(items.length); items.push({ s: out, w: -1 }); }
+  };
+
+  const run = (text, ctx) => {
+    const re = new RegExp(TOKEN_SRC, 'gu');
+    let firstWord = true;
+    let needCap = !ctx.lowerFirst;
+    let join = null;
+    let m;
+    while ((m = re.exec(text))) {
+      if (m[1]) {
+        const key = norm(m[1]);
+        const atStart = needCap;
+        needCap = false;
+        if (has(SYMBOLS, key)) { symbol(key); continue; }
+        const sq = squaredText(key);
+        if (sq !== null) {
+          const at0 = items.length, before0 = starts.length;
+          if (/^[A-Za-z0-9!]+$/.test(sq)) run(sq, { lead: -1, end: -1, lowerFirst: false });
+          else for (const ch of sq) items.push({ s: ch, w: -1 });
+          const n0 = state.emojis++;
+          items.push({ s: EMO_ARROWS[Math.min(n0, 3)], w: -1 });
+          for (const d of String(n0 + 1)) items.push({ s: d, w: -1 });
+          starts.length = before0;
+          starts.push(at0);
+          continue;
+        }
+        const found = lookupEmoji(m[1]);
+        const at = items.length;
+        const before = starts.length;
+        if (!found) { items.push({ s: '>', w: -1 }); starts.push(at); continue; }
+        if (found.lit) pushLit(found.lit, atStart);
+        else run(cleanName(found.name), { lead: -1, end: -1, lowerFirst: !atStart });
+        const n = state.emojis++;
+        items.push({ s: EMO_ARROWS[Math.min(n, 3)], w: -1 });
+        for (const d of String(n + 1)) items.push({ s: d, w: -1 });
+        starts.length = before;
+        starts.push(at);
+      } else if (m[2]) {
+        const id = (join && join.end === m.index && join.id >= 0) ? join.id : wordId++;
+        const lowerFirstWord = ctx.lowerFirst && firstWord;
+        firstWord = false;
+        const raw = [...m[2]];
+        const letters = raw.map((ch) => ({ k: fold(ch).toLowerCase(), up: ch !== ch.toLowerCase(), def: DEFECT.test(ch) }));
+        const nearVowel = (i) =>
+          (letters[i - 1] && outVowel(letters[i - 1])) || (letters[i + 1] && outVowel(letters[i + 1]));
+        letters.forEach((L, i) => {
+          starts.push(items.length);
+          const k = L.k;
+          const pos = m.index + i;
+          const up = i === 0 ? (lowerFirstWord ? false : (needCap || L.up)) : L.up;
+          const pick = (pair) => (up ? pair[0] : pair[1]);
+          const push = (s) => items.push({ s, w: id });
+          if (DEFECT.test(raw[i])) {
+            const base = fold(raw[i]);
+            push(up ? base.toUpperCase() : base.toLowerCase());
+            return;
+          }
+          if (k === 'ь') { items.push({ s: ')', w: id, soft: true }); return; }
+          if (k === 'ё') {
+            if (pos === ctx.lead) push('‡');
+            push(pick(MAP['ё']));
+            if (pos === ctx.end) push('‡');
+            return;
+          }
+          if (k === 'm' || k === 'м') { push(pick(nearVowel(i) ? ['∞', '*'] : ['T', 't'])); return; }
+          if (k === 't' || k === 'т') { push(pick(nearVowel(i) ? ['Ŧ', 'T'] : ['M', 'm'])); return; }
+          push(MAP[k] ? pick(MAP[k]) : raw[i]);
+        });
+        needCap = false;
+      } else if (m[3]) {
+        needCap = false;
+        for (const d of m[3]) {
+          starts.push(items.length);
+          const [text2, soft] = DIGITS[d];
+          for (const ch of text2) items.push({ s: ch, w: -1, num: true });
+          if (soft) items.push({ s: ')', w: -1, soft: true, num: true });
+          items.push({ s: NUMSEQ[Math.min(state.numbers, NUMSEQ.length - 1)], w: -1, num: true });
+          state.numbers++;
+        }
+      } else {
+        needCap = /[^\S\r\n]/.test(m[4]);
+        const n0 = items.length;
+        symbol(m[4]);
+        join = null;
+        if (items.length < n0 || (has(SYMBOLS, m[4]) && SYMBOLS[m[4]] === ERASE)) {
+          const last = items[items.length - 1];
+          if (last && last.w >= 0) join = { end: m.index + m[0].length, id: last.w };
+        }
+      }
+    }
+  };
+  run(par, { lead, end, lowerFirst: false });
+
+  const joined = [];
+  for (const it of items) {
+    joined.push(it);
+    while (joined.length > 1) {
+      const a = joined[joined.length - 2], b = joined[joined.length - 1];
+      if (a.w === -1 && b.w === -1 && !a.num && !b.num && a.s === b.s && ANGLE[a.s]) {
+        joined.length -= 2;
+        joined.push({ s: ANGLE[a.s], w: -1 });
+      } else break;
+    }
+  }
+  items.length = 0;
+  joined.forEach((it, i) => {
+    items.push(it);
+    if (it.s === '∆' && i > 0) items.push({ s: joined[i - 1].s, w: -1 });
+  });
+
+  let lastSoft = -1;
+  let softs = 0;
+  items.forEach((it, i) => { if (it.soft) { lastSoft = i; softs++; } });
+  for (let i = 0; i < lastSoft; i++) {
+    const to = INSIDE_PARENS[items[i].s];
+    if (to) { items[i].s = to; items[i].br = true; }
+  }
+
+  const merged = [];
+  for (let i = 0; i < items.length; i++) {
+    const a = items[i], b = items[i + 1];
+    if (b && a.w >= 0 && a.w === b.w && !a.soft && !b.soft && ((isLetter(a.s) && isLetter(b.s)) || (a.s === ';' && b.s === ';'))) {
+      const s = mergePair(a, b);
+      if (s) { merged.push({ s, w: a.w, inside: i < lastSoft }); i++; continue; }
+    }
+    merged.push(a);
+  }
+
+  for (const it of merged) {
+    if (it.inside && it.s === 'Ŀ') it.s = 'Ľ';
+    else if (it.inside && it.s === 'ŀ') it.s = 'ľ';
+  }
+
+  if (state.first && merged.length && merged[0].w >= 0) {
+    const ascii = (it) => !!it && it.w >= 0 && /^[A-Za-z]$/.test(it.s);
+    const [a, b] = merged;
+    const code = ascii(a) && ascii(b) && a.w === b.w ? (a.s + b.s).toUpperCase() : '';
+    if (FLAGS.has(code)) merged.splice(0, 2, { s: flagOf(code), w: -1, lead: true });
+    else if (code === 'TP') merged.splice(0, 2, { s: '🧻', w: -1, lead: true });
+    else if (ascii(a) && LETTER_EMOJI[a.s.toLowerCase()]) {
+      merged.splice(0, 1, { s: LETTER_EMOJI[a.s.toLowerCase()], w: -1, lead: true });
+    }
+  }
+
+  if (!merged.length) return '';
+  const symItem = (it) => !(it.lead || isLetter(it.s));
+  const firstPlain = merged.find((it) => !it.soft);
+  const initialSymbol = !!firstPlain && symItem(firstPlain);
+  const endSymbol = symItem(merged[merged.length - 1]);
+
+  let out = merged.map((it) => it.s).join('');
+  let idx = 0;
+  if (initialSymbol) { out = MARKS[0] + out; idx = 1; }
+  for (let j = 0; j < softs; j++) {
+    out = MARKS[Math.min(idx, MARKS.length - 1)] + '(' + out;
+    idx++;
+  }
+  if (endSymbol) out += '†';
+  return out;
+}
+
+function translate(text) {
+  const state = { numbers: 0, emojis: 0, first: true };
+  return text.split(/\r?\n/).map((p, i) => {
+    state.first = i === 0;
+    return translateParagraph(p, state);
+  }).join('\n');
+}
+
+/* ===== обратный перевод: с бартанского на русский и английский ===== */
+const REV = { ru: {}, en: {} };
+for (const [k, pair] of Object.entries(MAP)) {
+  const lang = /[a-z]/.test(k) ? 'en' : 'ru';
+  pair.forEach((g, slot) => {
+    const m = REV[lang][g] || (REV[lang][g] = new Map());
+    m.set(k, slot === 0);
+  });
+}
+const REV_DOUBLE = {};
+for (const [k, pair] of Object.entries(DOUBLES)) {
+  if (k === 'v') { REV_DOUBLE['Ⓥ'] = 'VV'; continue; }
+  if (k === 'c') { REV_DOUBLE[pair[0]] = '\uE300'; REV_DOUBLE[pair[1]] = '\uE300'; continue; }
+  if (k === 'h') { REV_DOUBLE[pair[0]] = 'HH'; continue; }
+  REV_DOUBLE[pair[0]] = k.toUpperCase() + k.toUpperCase();
+  REV_DOUBLE[pair[1]] = k + k;
+}
+REV_DOUBLE['⎨'] = ';;';
+REV_DOUBLE['Ľ'] = 'LL'; REV_DOUBLE['ľ'] = 'll';
+REV_DOUBLE['Ź'] = 'ŻŻ'; REV_DOUBLE['ź'] = 'żż';
+REV_DOUBLE['Ł'] = 'L'; REV_DOUBLE['ł'] = 'l';
+REV_DOUBLE['Z'] = 'Ż'; REV_DOUBLE['z'] = 'ż';
+REV_DOUBLE['ſ'] = '';
+const REV_NUM = /(od[lł]H|d;a|mp[lł]|_eT\?pe|r'm\)|\+ecm\)|Ce\*\)|;oce\*\)|de;'m\)|Hoi\))[¹½⅓¼⅕⅙⅐⅛⅑⅒²⅔⅖⅗⅜⁴⅘⁵⅚⅝⁶⁷⅞⁸⁹⁰ⁿ∅]/g;
+const REV_NUMWORD = { 'odlH': '1', 'odłH': '1', 'd;a': '2', 'mpl': '3', 'mpł': '3', '_eT?pe': '4', "r'm)": '5', '+ecm)': '6', 'Ce*)': '7', ';oce*)': '8', "de;'m)": '9', 'Hoi)': '0' };
+const REV_VOWEL = (g) => !!g && /^[AEIOUYaeiouy]$/.test(fold(g));
+
+function decodeUnits(units, lang) {
+  const out = [];
+  units.forEach((u, i) => {
+    if (u.lit !== undefined) { out.push(u.lit); return; }
+    const g = u.g;
+    if (g === 'ь') { if (lang === 'ru') out.push('ь'); return; }
+    if (g === '') { out.push('?'); return; }
+    const near = () => {
+      const a = units[i - 1], b = units[i + 1];
+      return (a && a.g && REV_VOWEL(a.g)) || (b && b.g && REV_VOWEL(b.g));
+    };
+    const L = lang === 'ru' ? ['м', 'т'] : ['m', 't'];
+    const cap = (s, up) => (up ? s.toUpperCase() : s);
+    if (g === '∞') { out.push(cap(L[0], true)); return; }
+    if (g === '*') { out.push(L[0]); return; }
+    if (g === 't') { out.push(L[0]); return; }
+    if (g === 'Ŧ') { out.push(cap(L[1], true)); return; }
+    if (g === 'M') { out.push(cap(L[1], true)); return; }
+    if (g === 'm') { out.push(L[1]); return; }
+    if (g === 'T') { out.push(near() ? L[1] : cap(L[0], true)); return; }
+    const mine = REV[lang][g], other = REV[lang === 'ru' ? 'en' : 'ru'][g];
+    if (mine) {
+      if (mine.size === 1) { const [[k, up]] = [...mine]; out.push(cap(k, up)); }
+      else out.push('?');
+    } else if (other) out.push('?');
+  });
+  return out.join('');
+}
+
+function reverseLine(line) {
+  let s = line.replace(/[←↑↓→]\d+/g, '');
+  s = s.replace(/\p{Regional_Indicator}\p{Regional_Indicator}/gu, (m) => {
+    const [a, b] = [...m].map((c) => String.fromCharCode(65 + c.codePointAt(0) - 0x1F1E6));
+    return a + b.toLowerCase();
+  });
+  const LET = { '\u{1F170}': 'A', '\u{1F171}': 'B', '\u{1F62E}': 'O', '✌': 'V', '❌': 'X', '\u{1F9FB}': 'Tp' };
+  s = s.replace(/([\u{1F170}\u{1F171}\u{1F62E}✌❌\u{1F9FB}])️?/gu, (m, c) => LET[c]);
+  s = s.replace(REV_NUM, (m) => '' + REV_NUMWORD[m.slice(0, -1)]);
+  s = s.replace(/[★☆✰♙♘♗♖♕♔♟♞♝♜♛♚≈†‡(︎️]/g, '');
+  const words = s.split(/[.\s]+/).filter(Boolean);
+  const ru = [], en = [];
+  for (const w of words) {
+    const units = [];
+    for (const ch of w) {
+      if (ch === '' || ch === '') { units.push({ mark: ch }); continue; }
+      const prev = units[units.length - 1];
+      if (prev && prev.mark) { units.pop(); units.push({ lit: prev.mark === '' ? ch : ch }); continue; }
+      if (ch === ')') { units.push({ g: 'ь' }); continue; }
+      if (Object.prototype.hasOwnProperty.call(REV_DOUBLE, ch)) {
+        for (const g of REV_DOUBLE[ch]) units.push({ g });
+        continue;
+      }
+      units.push({ g: ch });
+    }
+    ru.push(decodeUnits(units, 'ru'));
+    en.push(decodeUnits(units, 'en'));
+  }
+  return { ru: ru.filter(Boolean).join(' '), en: en.filter(Boolean).join(' ') };
+}
+
+function reverse(text) {
+  const lines = text.split(/\r?\n/).map(reverseLine);
+  return { ru: lines.map((l) => l.ru).join('\n'), en: lines.map((l) => l.en).join('\n') };
+}
+/*END*/
+
+
+const src = document.getElementById('src');
+const dst = document.getElementById('dst');
+const dst2 = document.getElementById('dst2');
+const status = document.getElementById('status');
+let timer = 0;
+let mode = 'to';
+const SAMPLE_TO = src.value;
+const SAMPLE_FROM = 'Rpl;eT.Tłp';
+
+function render() {
+  if (mode === 'to') { dst.textContent = translate(src.value); return; }
+  const r = reverse(src.value);
+  dst.textContent = r.ru;
+  dst2.textContent = r.en;
+}
+function setMode(m) {
+  if (m === mode) return;
+  const sample = src.value === (mode === 'to' ? SAMPLE_TO : SAMPLE_FROM);
+  mode = m;
+  const from = m === 'from';
+  document.getElementById('m-to').setAttribute('aria-pressed', String(!from));
+  document.getElementById('m-from').setAttribute('aria-pressed', String(from));
+  document.getElementById('en-box').hidden = !from;
+  document.getElementById('hint2').hidden = !from;
+  document.getElementById('hint').hidden = from;
+  document.getElementById('src-label').textContent = from ? 'Текст на бартанском' : 'Ваш текст';
+  document.getElementById('dst-label').textContent = from ? 'По-русски' : 'Перевод';
+  dst.dataset.ph = from ? 'Здесь появится русский перевод' : 'Здесь появится перевод';
+  if (sample) src.value = from ? SAMPLE_FROM : SAMPLE_TO;
+  render();
+}
+function flash(msg) {
+  status.textContent = msg;
+  clearTimeout(timer);
+  timer = setTimeout(() => { status.textContent = ''; }, 2200);
+}
+async function copyFrom(el) {
+  const text = el.textContent;
+  if (!text) { flash('Нечего копировать'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    flash('Скопировано');
+  } catch (e) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    flash('Текст выделен, скопируйте вручную');
+  }
+}
+
+src.addEventListener('input', render);
+document.getElementById('m-to').addEventListener('click', () => setMode('to'));
+document.getElementById('m-from').addEventListener('click', () => setMode('from'));
+document.getElementById('clear').addEventListener('click', () => { src.value = ''; render(); src.focus(); });
+document.getElementById('copy').addEventListener('click', () => copyFrom(dst));
+document.getElementById('copy2').addEventListener('click', () => copyFrom(dst2));
+render();
+</script>
+</body>
+</html>
